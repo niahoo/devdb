@@ -60,7 +60,7 @@ defmodule Kvern.Store do
       path: Keyword.get(config, :path, nil) |> validate_path!,
       name: Keyword.get(config, :name, nil),
       backup_conf: %{
-        codec: Keyword.get(config, :codec, Kvern.Codec),
+        codec: Keyword.get(config, :codec, Kvern.Codec.Exs),
       }
     }
   end
