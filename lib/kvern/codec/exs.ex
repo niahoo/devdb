@@ -4,7 +4,7 @@ defmodule Kvern.Codec.Exs do
     do: "exs"
 
   def encode(data),
-    do: {:ok, Macro.to_string(quote do: unquote(data))}
+    do: {:ok, Macro.to_string(quote do: unquote(data)) <> "\n"}
 
   def decode(string) do
     {contents, _no_bindings} = Code.eval_string(string, [])
