@@ -5,7 +5,9 @@ defmodule Kvern do
   defdelegate commit(db), to: Store
   defdelegate rollback(db), to: Store
 
-  @key_maxlen 30
+  # keys are used for file names. extension is .edn or .json, so 5 chars max.
+  # we want 30 chars filenames maximum, so max length key is 25 chars
+  @key_maxlen 25
 
   @doc """
   The key/value stores backups data to disk. To be sure that the filename will
@@ -15,15 +17,15 @@ defmodule Kvern do
   - Max lenght 30 (byte length)
   """
   def valid_key?(key) when not is_binary(key),
-    do: {:error, {:bad_key, :not_binary}}
+    do: {:error, {:bad_key, :not_binary, key}}
 
   def valid_key?(key) when byte_size(key) > @key_maxlen,
-    do: {:error, {:bad_key, :too_long}}
+    do: {:error, {:bad_key, :too_long, key}}
 
   def valid_key?(key) do
     ~r/^[a-zA-Z]+[0-9a-zA-Z_-]*$/
     |> Regex.match?(key)
-    |> if(do: :ok, else: {:error, {:bad_key, :bad_characters}})
+    |> if(do: :ok, else: {:error, {:bad_key, :bad_characters, key}})
   end
 
   def open(name) when is_atom(name),
@@ -53,8 +55,21 @@ defmodule Kvern do
     send_command(db, {:kv_fetch, key})
   end
 
+  def fetch!(db, key) do
+    {:ok, val} = send_command(db, {:kv_fetch, key})
+    val
+  end
+
   def print_dump(db) do
     GenServer.cast(Store.via(db), :print_dump)
+  end
+
+  def nuke_storage(db) do
+    GenServer.call(Store.via(db), :nuke_storage)
+  end
+
+  def shutdown(db) do
+    GenServer.call(Store.via(db), :shutdown)
   end
 
 end

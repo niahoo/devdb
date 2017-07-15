@@ -34,6 +34,8 @@ defmodule Kvern.Mixfile do
       {:plain_fsm, github: "uwiger/plain_fsm", override: true},
       {:shorter_maps, "~> 2.1"},
       {:xdn, path: "../xdn"},
+      {:glob, "~> 0.0.9"},
+      {:mutex, "~> 1.0.0", only: :test},
     ]
   end
 end

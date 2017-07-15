@@ -26,6 +26,7 @@ defmodule Kvern.Store do
   import GenHelp
   import ShorterMaps
   alias Kvern.Storage
+  alias Kvern.Backup
 
   defmodule S do
     defstruct [:name, :config, :transaction_owner, :transaction_monitor, :backup, :storage]
@@ -41,6 +42,8 @@ defmodule Kvern.Store do
 
   # -- Client side API --------------------------------------------------------
 
+  def via(pid) when is_pid(pid),
+    do: pid
   def via(name),
     do: {:via, Registry, {@registry, name}}
 
@@ -54,9 +57,17 @@ defmodule Kvern.Store do
   def validate_transform_config(config) do
     %{
       user_handlers: Keyword.get(config, :handlers, %{}),
-      path: Keyword.get(config, :path, nil) |> validate_path,
+      path: Keyword.get(config, :path, nil) |> validate_path!,
       name: Keyword.get(config, :name, nil),
+      backup_conf: %{
+        codec: Keyword.get(config, :codec, Kvern.Codec),
+      }
     }
+  end
+
+  def validate_path!(path) do
+    true = validate_path(path)
+    path
   end
 
   def validate_path(nil), do: :ok
@@ -68,7 +79,9 @@ defmodule Kvern.Store do
     config = validate_transform_config(config)
     start = fn() ->
       Process.flag(:trap_exit, true)
-      case Map.get(config, :name) do
+      name = Map.get(config, :name)
+        |> IO.inspect
+      case name do
         nil -> :ok
         name -> Registry.register(@registry, name, __MODULE__)
       end
@@ -106,9 +119,12 @@ defmodule Kvern.Store do
 
   def init(config) do
     Logger.debug("#{__MODULE__} initializing ...")
+    Logger.flush
     storage = Storage.new
-    state = ~M(%S config, storage)
+    name = config.name
+    state = ~M(%S config, storage, name)
     Logger.debug("#{__MODULE__} initialized.")
+    Logger.flush
     {:reply, {:ok, self()}, fn -> main_loop(state) end}
   end
 
@@ -121,18 +137,27 @@ defmodule Kvern.Store do
 
   # -- Server States ----------------------------------------------------------
 
+  def main_loop(nil) do
+    raise "bad state"
+  end
+
   def main_loop(state) do
-    # Logger.debug("Enter loop #{inspect state}")
+    # Logger.debug("Enter loop #{inspect state.name}")
+    # Logger.flush
     ~M(transaction_owner) = state # nil if not in transaction
     ereceive do
       # handling a command. The current transaction pid must be nil or be
       # equal to the caller's
       rcall(from, {:command, command})
           when transaction_owner in [nil, from_pid(from)] ->
+        Logger.debug("Received command #{inspect command}")
+        Logger.flush
         case handle_command(state, command) do
           {:continue, reply, new_state} ->
             reply_to(from, reply)
-            main_loop(new_state)
+            new_state
+            |> maybe_save_dirty(command)
+            |> main_loop()
           {:rollback, reply} ->
             reply_to(from, reply)
             state
@@ -148,20 +173,34 @@ defmodule Kvern.Store do
         {:ok, state} = transact_begin(state, client_pid)
         reply_to(from, @confirm)
         Logger.debug("Transaction started for #{inspect client_pid}")
+        Logger.flush
         main_loop(state)
       rcall(from, :commit)
           when transaction_owner === from_pid(from) ->
         state = state |> transact_commit() |> ok!
         reply_to(from, @confirm)
         Logger.debug("Transaction committed for #{inspect from_pid(from)}")
+        Logger.flush
         state
-        # |> maybe_save_to_file()
+        |> save_to_disk()
         |> main_loop()
       rcall(from, :rollback)
           when transaction_owner === from_pid(from) ->
         {:ok, state} = transact_rollback(state)
         reply_to(from, @confirm)
         Logger.warn("Transaction rollback for #{inspect from_pid(from)}")
+        main_loop(state)
+      rcall(from, :shutdown)
+          when transaction_owner === nil ->
+        Logger.warn("Unregistering ...")
+        Registry.unregister(@registry, state.name)
+        Logger.warn("Shutting down ...")
+        reply_to(from, :ok)
+        :ok # ---------------------------- NO LOOP ---------------------
+      rcall(from, :nuke_storage)
+          when transaction_owner === nil ->
+        Logger.warn("Nuking storage")
+        reply_to(from, nuke_storage(state))
         main_loop(state)
       rcast(:print_dump) ->
         print_dump(state)
@@ -179,6 +218,7 @@ defmodule Kvern.Store do
       # wait in the mailbox that the transaction is over
     after 10000 ->
       Logger.debug("timeout in main_loop")
+      Logger.flush
       main_loop(state)
     end
   end
@@ -190,6 +230,7 @@ defmodule Kvern.Store do
     IO.inspect storage.kvs
     IO.puts("tainted:")
     IO.inspect Storage.tainted(storage)
+    IO.inspect state, pretty: true
   end
 
   defp transact_begin(state, client_pid) do
@@ -262,30 +303,84 @@ defmodule Kvern.Store do
 
   # -- Writing to file --------------------------------------------------------
 
-  defp maybe_save_to_file(%{config: %{path: nil}, name: name} = state) do
-    Logger.debug("Disk backup configuration not found for database #{inspect name}")
+  # After dirty writes, we must save instead of wait for a commit.
+  # if we are in a transaction, we skip
+  # if the command is a read operation, we skip
+
+  defp maybe_save_dirty(%{transaction_owner: pid} = state, _) when is_pid(pid) do
+    # we are in a transaction
     state
   end
-  defp maybe_save_to_file(%{config: %{path: false}, name: name} = state) do
-    state
-  end
-  defp maybe_save_to_file(%{config: %{path: path}, name: name} = state)
-      when is_binary(path) do
-      _saved = save_to_file(state, path)
-    try do
-      _saved
-    rescue
-      e ->
-      Logger.error(Exception.message(e))
-      state
-    end
+  # must write
+  defp maybe_save_dirty(state, {:kv_put, _, _}), do: save_to_disk(state)
+  # no need to write
+  defp maybe_save_dirty(state, {:kv_get, _}), do: state
+  defp maybe_save_dirty(state, {:kv_fetch, _}), do: state
+  # don't know, so we should write
+  defp maybe_save_dirty(state, command) do
+    Logger.error("Unsure if command should write to disk : #{inspect command}, saving to disk")
+    save_to_disk(state)
   end
 
-  defp save_to_file(state, path) do
-    # ~M(schema, storage) = state
-    # Backup.write(~M(schema, storage, path))
-    # state
+
+
+  defp save_to_disk(%{config: %{path: nil}, name: name} = state) do
+    Logger.debug("Disk backup configuration not found for database #{inspect name}")
+    Logger.flush
+    state
   end
+  defp save_to_disk(%{config: %{path: false}, name: name} = state) do
+    # backup disabled
+    state
+  end
+  defp save_to_disk(%{config: %{path: path}, name: name, storage: storage} = state)
+      when is_binary(path) do
+      case Storage.tainted?(storage) do
+        false -> state
+        true ->
+          saved_state = backup_to_disk(state, path)
+          # try do
+          #   saved_state
+          # rescue
+          #   e ->
+          #   Logger.error(Exception.message(e))
+          #   state
+          # end
+      end
+  end
+
+  defp backup_to_disk(state, path) do
+    # Backup only the tainted elements.
+    state.storage
+      |> Storage.all_tainted_data()
+      |> IO.inspect
+      |> Stream.map(fn({key, value}) when is_binary(key) ->
+          Backup.write_file(path, key, value, state.config.backup_conf)
+         end)
+      |> Stream.map(&log_backup_errors/1)
+      |> Stream.run
+    state
+      |> Map.update!(:storage, &Storage.clear_tainted/1)
+    state
+  end
+
+  defp log_backup_errors({:ok, key}) do
+    Logger.debug("SAVED #{key}")
+  end
+
+  defp log_backup_errors({:error, {err, key}}) do
+    Logger.error("SAVE ERROR #{key} : #{inspect err}")
+  end
+
+  defp nuke_storage(%{config: %{path: path}, name: name} = state)
+      when is_binary(path) do
+    with {:ok, _} <- File.rm_rf(path) do
+      File.mkdir(path)
+    else
+      other -> {:error, other}
+    end
+  end
+  defp nuke_storage(_), do: :ok # no storage
 
   # -- Internal Data Structures -----------------------------------------------
 

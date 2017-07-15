@@ -1,3 +1,6 @@
-%{"plain_fsm": {:git, "https://github.com/uwiger/plain_fsm.git", "ae9eca8a8df8f61a32185b06882a55d60e62e904", []},
+%{"eon": {:hex, :eon, "4.1.0", "dbacaa30634ed11f43bbf6af9e1138da283c8354a188c553423a464cf7e04f83", [:mix], [], "hexpm"},
+  "glob": {:hex, :glob, "0.0.9", "dea4a2f6d9fc7e8dbe478367fa7b898b8c9290f3f2d1a7c754529effff3bceb4", [:rebar3], [], "hexpm"},
+  "mutex": {:hex, :mutex, "1.0.1", "416d4ef99efd4f5fee40a0ac8b11bea1695eaaaddda8840a6555cbd234f4abc8", [:mix], [], "hexpm"},
+  "plain_fsm": {:git, "https://github.com/uwiger/plain_fsm.git", "ae9eca8a8df8f61a32185b06882a55d60e62e904", []},
   "plain_fsm_ex": {:git, "https://github.com/ashneyderman/plain_fsm_ex.git", "2bf61bb656f5b328ffd78ea45393ad1395ac75f1", [branch: "master"]},
   "shorter_maps": {:hex, :shorter_maps, "2.1.0", "e4654a4d1015e02af9b3edba8d7de03c06ce8bab394248c0a7f71f4ee64a97ad", [:mix], [], "hexpm"}}
