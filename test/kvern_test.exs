@@ -6,8 +6,7 @@ defmodule KvernTest do
   @mutex KvernTest.Mutex
 
   @dir_1 (
-    File.cwd!
-    |> Path.join("test/stores/d1")
+    File.cwd! |> Path.join("test/stores/d1")
   )
 
   setup_all do
@@ -18,6 +17,7 @@ defmodule KvernTest do
     {:ok, _pid} = Supervisor.start_link(children, strategy: :one_for_one)
 
     # setup Kvern
+    File.rm_rf! @dir_1
     File.mkdir_p! @dir_1
     Application.ensure_started(:kvern)
     launch_store()

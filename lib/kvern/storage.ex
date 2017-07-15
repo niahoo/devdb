@@ -40,18 +40,44 @@ defmodule Kvern.Storage do
   def all_tainted_data(~M(tainted) = storage) do
     tainted
       |> Enum.reduce(%{}, fn(syskey, acc) ->
-          filename = sys_key_filename(syskey)
-          Map.put(acc, filename, sys_get(storage, syskey))
+          external = syskey_to_external(syskey)
+          Map.put(acc, external, sys_get(storage, syskey))
          end)
   end
 
-  # get the filename for a stored key. User keys (in :kvs) are simply the user
-  # key itself. We may add syskeys like :meta, :sys, :savepoint, stuff like that
-  defp sys_key_filename({:kvs, key}), do: key
+  # get the external for a stored key. User keys (in :kvs) are simply the user
+  # key itself, that obey to Kvern keys rules.
+
+  # We may add syskeys like :meta, :sys, :savepoint, stuff like that, with
+  # different rules (e.g. start by a dot)
+  defp syskey_to_external({:kvs, key}), do: key
+
+  # Reverse function. atm only user keys are handled so they belong to :kvs
+  defp external_to_syskey(key), do: {:kvs, key}
+
+  # Creates a fresh storage from data. Keys are evaluated
+  def sys_import(data) do
+    empty = new()
+    Enum.reduce(data, empty, fn({k, v}, storage) ->
+      sys_import(storage, k, v)
+    end)
+  end
+
+  def sys_import(storage, extkey, value) do
+    key = external_to_syskey(extkey)
+    sys_put(storage, key, value)
+  end
 
   # Gets a value on the whole storage : in user space (:kvs) or other
   # information (YAGNI ?)
   defp sys_get(~M(kvs), {:kvs, key}),
     do: Map.fetch!(kvs, key)
+
+
+  # Sets a value on the whole storage : in user space (:kvs) or other
+  # information (YAGNI ?)
+  def sys_put(storage, {:kvs, key}, value),
+    do: kv_put(storage, key, value)
+
 end
 

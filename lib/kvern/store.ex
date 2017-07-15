@@ -118,14 +118,16 @@ defmodule Kvern.Store do
   # -- Database initialization ------------------------------------------------
 
   def init(config) do
-    Logger.debug("#{__MODULE__} initializing ...")
-    Logger.flush
+    Logger.debug("#{__MODULE__} initializing ...") ; Logger.flush
     storage = Storage.new
     name = config.name
     state = ~M(%S config, storage, name)
-    Logger.debug("#{__MODULE__} initialized.")
-    Logger.flush
-    {:reply, {:ok, self()}, fn -> main_loop(state) end}
+    Logger.debug("#{__MODULE__} initialized.") ; Logger.flush
+    {:reply, {:ok, self()}, fn ->
+      state
+        |> recover_storage()
+        |> main_loop()
+    end}
   end
 
   def data_vsn(),
@@ -142,16 +144,14 @@ defmodule Kvern.Store do
   end
 
   def main_loop(state) do
-    # Logger.debug("Enter loop #{inspect state.name}")
-    # Logger.flush
+    # Logger.debug("Enter loop #{inspect state.name}") ; Logger.flush
     ~M(transaction_owner) = state # nil if not in transaction
     ereceive do
       # handling a command. The current transaction pid must be nil or be
       # equal to the caller's
       rcall(from, {:command, command})
           when transaction_owner in [nil, from_pid(from)] ->
-        Logger.debug("Received command #{inspect command}")
-        Logger.flush
+        Logger.debug("Received command #{inspect command}") ; Logger.flush
         case handle_command(state, command) do
           {:continue, reply, new_state} ->
             reply_to(from, reply)
@@ -172,15 +172,13 @@ defmodule Kvern.Store do
         client_pid = from_pid(from)
         {:ok, state} = transact_begin(state, client_pid)
         reply_to(from, @confirm)
-        Logger.debug("Transaction started for #{inspect client_pid}")
-        Logger.flush
+        Logger.debug("Transaction started for #{inspect client_pid}") ; Logger.flush
         main_loop(state)
       rcall(from, :commit)
           when transaction_owner === from_pid(from) ->
         state = state |> transact_commit() |> ok!
         reply_to(from, @confirm)
-        Logger.debug("Transaction committed for #{inspect from_pid(from)}")
-        Logger.flush
+        Logger.debug("Transaction committed for #{inspect from_pid(from)}") ; Logger.flush
         state
         |> save_to_disk()
         |> main_loop()
@@ -188,18 +186,18 @@ defmodule Kvern.Store do
           when transaction_owner === from_pid(from) ->
         {:ok, state} = transact_rollback(state)
         reply_to(from, @confirm)
-        Logger.warn("Transaction rollback for #{inspect from_pid(from)}")
+        Logger.warn("Transaction rollback for #{inspect from_pid(from)}") ; Logger.flush
         main_loop(state)
       rcall(from, :shutdown)
           when transaction_owner === nil ->
-        Logger.warn("Unregistering ...")
+        Logger.warn("Unregistering ...") ; Logger.flush
         Registry.unregister(@registry, state.name)
-        Logger.warn("Shutting down ...")
+        Logger.warn("Shutting down ... #{inspect state.storage}") ; Logger.flush
         reply_to(from, :ok)
         :ok # ---------------------------- NO LOOP ---------------------
       rcall(from, :nuke_storage)
           when transaction_owner === nil ->
-        Logger.warn("Nuking storage")
+        Logger.warn("Nuking storage") ; Logger.flush
         reply_to(from, nuke_storage(state))
         main_loop(state)
       rcast(:print_dump) ->
@@ -207,25 +205,24 @@ defmodule Kvern.Store do
         main_loop(state)
       rcall(from, other)
           when transaction_owner in [nil, from_pid(from)] ->
-        Logger.warn("Database received unexpected call #{inspect other} from #{inspect from_pid(from)}")
+        Logger.warn("Database received unexpected call #{inspect other} from #{inspect from_pid(from)}") ; Logger.flush
         reply_to(from, {:error, {:unhandled_message, other}})
         main_loop(state)
       rcast(other) ->
-        Logger.warn("Database received unexpected cast #{inspect other}")
+        Logger.warn("Database received unexpected cast #{inspect other}") ; Logger.flush
         main_loop(state)
       # Here is no catchall call because we do not want to match on any
       # message when a transaction is running. This way, those messages will
       # wait in the mailbox that the transaction is over
     after 10000 ->
-      Logger.debug("timeout in main_loop")
-      Logger.flush
+      Logger.debug("timeout in main_loop") ; Logger.flush
       main_loop(state)
     end
   end
 
   defp print_dump(state) do
     ~M(name, storage) = state
-    # Logger.error("@todo implement")
+    # Logger.error("@todo implement") ; Logger.flush
     IO.puts("Kvern (#{inspect name}) storage:")
     IO.inspect storage.kvs
     IO.puts("tainted:")
@@ -283,7 +280,7 @@ defmodule Kvern.Store do
     rescue
         e in _ ->
           msg = Exception.message(e)
-          Logger.error(msg)
+          Logger.error(msg) ; Logger.flush
         reply = {:error, {:command_exception, command, e}}
         {:rollback, reply}
     else
@@ -318,15 +315,12 @@ defmodule Kvern.Store do
   defp maybe_save_dirty(state, {:kv_fetch, _}), do: state
   # don't know, so we should write
   defp maybe_save_dirty(state, command) do
-    Logger.error("Unsure if command should write to disk : #{inspect command}, saving to disk")
+    Logger.error("Unsure if command should write to disk : #{inspect command}, saving to disk") ; Logger.flush
     save_to_disk(state)
   end
 
-
-
   defp save_to_disk(%{config: %{path: nil}, name: name} = state) do
-    Logger.debug("Disk backup configuration not found for database #{inspect name}")
-    Logger.flush
+    Logger.debug("Disk backup configuration not found for store #{inspect name}") ; Logger.flush
     state
   end
   defp save_to_disk(%{config: %{path: false}, name: name} = state) do
@@ -343,7 +337,7 @@ defmodule Kvern.Store do
           #   saved_state
           # rescue
           #   e ->
-          #   Logger.error(Exception.message(e))
+          #   Logger.error(Exception.message(e)) ; Logger.flush
           #   state
           # end
       end
@@ -365,11 +359,35 @@ defmodule Kvern.Store do
   end
 
   defp log_backup_errors({:ok, key}) do
-    Logger.debug("SAVED #{key}")
+    Logger.debug("SAVED #{key}") ; Logger.flush
   end
 
   defp log_backup_errors({:error, {err, key}}) do
-    Logger.error("SAVE ERROR #{key} : #{inspect err}")
+    Logger.error("SAVE ERROR #{key} : #{inspect err}") ; Logger.flush
+  end
+
+
+  defp recover_storage(%{config: %{path: nil}, name: name} = state) do
+    Logger.debug("Disk backup configuration not found for store #{inspect name}") ; Logger.flush
+    state
+  end
+  defp recover_storage(%{config: %{path: false}, name: name} = state) do
+    # backup disabled
+    state
+  end
+  defp recover_storage(%{config: %{path: path, backup_conf: bcf}, name: name, storage: storage} = state) do
+    case Backup.recover_dir(path, bcf) do
+      {:error, _} = err ->
+        Logger.error("Could not recover storage for store #{inspect name} in #{path} : #{inspect err}")
+        state
+      {:ok, kvs} ->
+        # Import all data but no need for the storage to be full tainted
+        state = state
+          |> Map.put(:storage, Storage.sys_import(kvs))
+          |> Map.update!(:storage, &Storage.clear_tainted/1)
+        Logger.warn("Recovered store from #{path} : #{inspect state.storage, pretty: true}")
+        state
+    end
   end
 
   defp nuke_storage(%{config: %{path: path}, name: name} = state)
