@@ -9,6 +9,10 @@ defmodule KvernTest do
     File.cwd! |> Path.join("test/stores/d1")
   )
 
+  @dir_2 (
+    File.cwd! |> Path.join("test/stores/d2")
+  )
+
   setup_all do
     # use a mutex to linearize all tests
     children = [
@@ -19,20 +23,20 @@ defmodule KvernTest do
     # setup Kvern
     File.rm_rf! @dir_1
     File.mkdir_p! @dir_1
+    File.rm_rf! @dir_2
+    File.mkdir_p! @dir_2
     Application.ensure_started(:kvern)
     launch_store()
     :ok
   end
 
   def launch_store() do
-    IO.puts "Launching store"
     {:ok, pid} = Kvern.open(
       name: @store,
       path: @dir_1,
       codec: Kvern.Codec.Exs
     )
     true = is_pid(pid)
-    IO.puts "Launched store !"
     {:ok, pid}
   end
 
@@ -80,7 +84,6 @@ defmodule KvernTest do
   test "call by pid" do
     lock()
     [{pid, _}] = Registry.lookup(Kvern.Registry, @store)
-      |> IO.inspect
     assert is_pid(pid)
     assert :ok === Kvern.put(pid, "ignore", :ignore)
     goodbye()
@@ -92,23 +95,38 @@ defmodule KvernTest do
     :ok = Kvern.put(@store, "my-key-1", :my_value_1)
     :ok = Kvern.put(@store, "my-key-2", :my_value_2)
     Kvern.shutdown(@store)
-    |> IO.inspect
-    IO.puts "Store is down"
     {:ok, _pid} =
       launch_store()
-      |> IO.inspect
-    IO.puts "Store is up !"
     assert :my_value_1 = Kvern.fetch!(@store, "my-key-1")
     goodbye()
   end
 
+  test "EDN file format" do
+    {:ok, pid} = Kvern.open(
+      path: @dir_2,
+      codec: Kvern.Codec.Edn
+    )
+    key = "edn-key-1"
+    val = %{
+      test: "value",
+      submap: %{"a" => 1, "b" => 2, 123 => 4.5, [:list, As, "key"] => {:my_tuple_tag, "val"}},
+    }
+    assert :ok === Kvern.put!(pid, key, val)
+    assert val = Kvern.fetch!(pid, key)
+  end
+
+  @todo "This test belongs to xdn repo"
+  test "EDN binaries" do
+    md5 = Xdn.module_info(:md5)
+    assert md5 ===
+      md5 |> Xdn.encode! |> Xdn.decode!
+  end
+
   def lock() do
     Mutex.await(@mutex, @store)
-    IO.puts "Locked !"
   end
 
   def goodbye() do
     Mutex.goodbye(@mutex)
-    IO.puts "Lock released."
   end
 end

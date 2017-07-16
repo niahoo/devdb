@@ -52,9 +52,7 @@ defmodule Kvern.Backup do
       {:ok, glob} = Regex.compile(".*\\.#{extension}$")
       data = dir
         |> File.ls!
-        |> IO.inspect
         |> Enum.filter(fn f -> Regex.match?(glob, f) end)
-        |> IO.inspect
         |> Enum.map(fn f ->
             path = Path.join(dir, f)
             bin = File.read!(path)
