@@ -36,6 +36,7 @@ defmodule Kvern.Mixfile do
       {:xdn, path: "../xdn"},
       {:glob, "~> 0.0.9"},
       {:mutex, "~> 1.0.0", only: :test},
+      {:decompilerl, github: "niahoo/decompilerl"},
       {:poison, "~> 3.1"},
     ]
   end

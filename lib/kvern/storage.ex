@@ -26,6 +26,9 @@ defmodule Kvern.Storage do
   def kv_fetch(storage, key),
     do: Map.fetch(storage.kvs, key)
 
+  def kv_all(storage),
+    do: storage.kvs
+
   def tainted(storage) do
     storage.tainted
     |> Enum.uniq

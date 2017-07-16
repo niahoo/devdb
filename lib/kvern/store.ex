@@ -192,7 +192,7 @@ defmodule Kvern.Store do
           when transaction_owner === nil ->
         Logger.warn("Unregistering ...")
         Registry.unregister(@registry, state.name)
-        Logger.warn("Shutting down ... #{inspect state.storage}")
+        Logger.warn("Shutting down ...")
         reply_to(from, :ok)
         :ok # ---------------------------- NO LOOP ---------------------
       rcall(from, :nuke_storage)
@@ -221,7 +221,21 @@ defmodule Kvern.Store do
   defp print_dump(state) do
     ~M(name, storage) = state
     # Logger.error("@todo implement")
-    IO.puts("Kvern (#{inspect name}) storage:\n#{inspect storage}")
+    IO.puts "Dump store #{name}"
+    codec = state.config.backup_conf.codec
+    storage
+      |> Storage.kv_all
+      |> Enum.map(fn {k, v} ->
+          [
+            "[", k, "]\n",
+            case codec.encode(v) do
+              {:ok, str} -> str
+              {:error, _} = err -> inspect(err)
+            end,
+            "\n"
+          ]
+         end)
+      |> IO.puts
   end
 
   defp transact_begin(state, client_pid) do
@@ -352,7 +366,7 @@ defmodule Kvern.Store do
   end
 
   defp log_backup_errors({:ok, key}) do
-#     Logger.debug("SAVED #{key}")
+    Logger.debug("SAVED #{key}")
   end
 
   defp log_backup_errors({:error, {err, key}}) do
@@ -378,7 +392,7 @@ defmodule Kvern.Store do
         state = state
           |> Map.put(:storage, Storage.sys_import(kvs))
           |> Map.update!(:storage, &Storage.clear_tainted/1)
-        Logger.warn("Recovered store from #{path} : #{inspect state.storage, pretty: true}")
+        Logger.warn("Recovered store from #{path}")
         state
     end
   end

@@ -59,7 +59,6 @@ defmodule KvernTest do
     key = "mykey"
     val = :some_value
     assert :ok === Kvern.put!(@store, key, val)
-    Kvern.print_dump(@store)
     assert :error === Kvern.fetch(@store, "__no_exist__")
     assert nil === Kvern.get(@store, "__no_exist__")
     assert :__hey__ === Kvern.get(@store, "__no_exist__", :__hey__)
