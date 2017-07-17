@@ -398,8 +398,7 @@ defmodule Kvern.Store do
           |> Map.put(:storage, Storage.sys_import(kvs))
           |> Map.update!(:storage, &Storage.clear_tainted/1)
         keys_list = kvs
-          |> IO.inspect
-          |> Enum.map(&elem(&1,0))
+          |> Enum.map(fn {k,_} -> "* " <> k end)
           |> Enum.join("\n")
         Logger.warn("Recovered store from #{dir} : \n#{keys_list}")
         state
