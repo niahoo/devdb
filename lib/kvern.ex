@@ -31,7 +31,7 @@ defmodule Kvern do
   def open(name) when is_atom(name),
     do: open([name: name])
   def open(config) when is_list(config) do
-    {:ok, _pid} = Supervisor.start_child(Kvern.StoreSupervisor, [config])
+    Supervisor.start_child(Kvern.StoreSupervisor, [config])
   end
 
   def put(db, key, value) do

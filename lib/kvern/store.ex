@@ -66,13 +66,17 @@ defmodule Kvern.Store do
   end
 
   def validate_dir!(dir) do
-    true = validate_dir(dir)
-    dir
+    if validate_dir(dir) do
+      dir
+    else
+      raise "Bad directory for kvern: #{inspect dir}"
+    end
   end
 
-  def validate_dir(nil), do: :ok
+  def validate_dir(nil), do: true
+  def validate_dir(false), do: true
   def validate_dir(dir) do
-    true = File.dir? dir
+    File.dir? dir
   end
 
   def start_link(config) do
