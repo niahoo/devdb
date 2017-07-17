@@ -41,17 +41,17 @@ defmodule KvernTest do
   end
 
   test "key format" do
-    assert :ok = Kvern.valid_key?("a")
-    assert :ok = Kvern.valid_key?("aqz009_-___zza")
-    assert :ok = Kvern.valid_key?("A")
+    assert :ok = Kvern.check_valid_key("a")
+    assert :ok = Kvern.check_valid_key("aqz009_-___zza")
+    assert :ok = Kvern.check_valid_key("A")
 
-    assert {:error, _} = Kvern.valid_key?("0ab")
-    assert {:error, _} = Kvern.valid_key?("1")
-    assert {:error, _} = Kvern.valid_key?("é")
-    assert {:error, _} = Kvern.valid_key?("hàça")
+    assert {:error, _} = Kvern.check_valid_key("0ab")
+    assert {:error, _} = Kvern.check_valid_key("1")
+    assert {:error, _} = Kvern.check_valid_key("é")
+    assert {:error, _} = Kvern.check_valid_key("hàça")
 
-    assert :ok = Kvern.valid_key?(:binary.copy("a", Kvern.key_maxlen()))
-    assert {:error, _} = Kvern.valid_key?(:binary.copy("a", 1 + Kvern.key_maxlen()))
+    assert :ok = Kvern.check_valid_key(:binary.copy("a", Kvern.key_maxlen()))
+    assert {:error, _} = Kvern.check_valid_key(:binary.copy("a", 1 + Kvern.key_maxlen()))
   end
 
   test "put / get simple value" do

@@ -23,6 +23,9 @@ defmodule Kvern.Storage do
   def kv_get(storage, key),
     do: Map.get(storage.kvs, key)
 
+  def kv_keys(storage),
+    do: Map.keys(storage.kvs)
+
   def kv_fetch(storage, key),
     do: Map.fetch(storage.kvs, key)
 

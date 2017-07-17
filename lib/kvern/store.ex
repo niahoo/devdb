@@ -325,6 +325,7 @@ defmodule Kvern.Store do
   # no need to write
   defp maybe_save_dirty(state, {:kv_get, _}), do: state
   defp maybe_save_dirty(state, {:kv_fetch, _}), do: state
+  defp maybe_save_dirty(state, :kv_keys), do: state
   # don't know, so we should write
   defp maybe_save_dirty(state, command) do
     Logger.error("Unsure if command should write to disk : #{inspect command}, saving to disk")
@@ -396,7 +397,11 @@ defmodule Kvern.Store do
         state = state
           |> Map.put(:storage, Storage.sys_import(kvs))
           |> Map.update!(:storage, &Storage.clear_tainted/1)
-        Logger.warn("Recovered store from #{dir}")
+        keys_list = kvs
+          |> IO.inspect
+          |> Enum.map(&elem(&1,0))
+          |> Enum.join("\n")
+        Logger.warn("Recovered store from #{dir} : \n#{keys_list}")
         state
     end
   end
@@ -425,6 +430,10 @@ defmodule Kvern.Store do
 
   defp run_command(state, {:kv_get, key}) do
     {:reply, Storage.kv_get(state.storage, key)}
+  end
+
+  defp run_command(state, :kv_keys) do
+    {:reply, Storage.kv_keys(state.storage)}
   end
 
   defp run_command(state, command) do
