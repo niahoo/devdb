@@ -50,8 +50,8 @@ defmodule KvernTest do
     assert {:error, _} = Kvern.valid_key?("é")
     assert {:error, _} = Kvern.valid_key?("hàça")
 
-    assert :ok = Kvern.valid_key?("aaaaaaaaaaaaaaaaaaaaaaaaa")
-    assert {:error, _} = Kvern.valid_key?("aaaaaaaaaaaaaaaaaaaaaaaaaa")
+    assert :ok = Kvern.valid_key?(:binary.copy("a", Kvern.key_maxlen()))
+    assert {:error, _} = Kvern.valid_key?(:binary.copy("a", 1 + Kvern.key_maxlen()))
   end
 
   test "put / get simple value" do

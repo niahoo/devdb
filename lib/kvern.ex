@@ -5,9 +5,9 @@ defmodule Kvern do
   defdelegate commit(db), to: Store
   defdelegate rollback(db), to: Store
 
-  # keys are used for file names. extension is .edn or .json, so 5 chars max.
-  # we want 30 chars filenames maximum, so max length key is 25 chars
-  @key_maxlen 25
+  @key_maxlen 50
+
+  def key_maxlen, do: @key_maxlen
 
   @doc """
   The key/value stores backups data to disk. To be sure that the filename will
