@@ -33,7 +33,7 @@ defmodule KvernTest do
   def launch_store() do
     {:ok, pid} = Kvern.open(
       name: @store,
-      path: @dir_1,
+      dir: @dir_1,
       codec: Kvern.Codec.Exs
     )
     true = is_pid(pid)
@@ -102,7 +102,7 @@ defmodule KvernTest do
 
   test "EDN file format" do
     {:ok, pid} = Kvern.open(
-      path: @dir_2,
+      dir: @dir_2,
       codec: Kvern.Codec.Edn
     )
     key = "edn-key-1"

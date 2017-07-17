@@ -57,7 +57,7 @@ defmodule Kvern.Store do
   def validate_transform_config(config) do
     %{
       user_handlers: Keyword.get(config, :handlers, %{}),
-      path: Keyword.get(config, :path, nil) |> validate_path!,
+      dir: Keyword.get(config, :dir, nil) |> validate_dir!,
       name: Keyword.get(config, :name, nil),
       backup_conf: %{
         codec: Keyword.get(config, :codec, Kvern.Codec.Exs),
@@ -65,14 +65,14 @@ defmodule Kvern.Store do
     }
   end
 
-  def validate_path!(path) do
-    true = validate_path(path)
-    path
+  def validate_dir!(dir) do
+    true = validate_dir(dir)
+    dir
   end
 
-  def validate_path(nil), do: :ok
-  def validate_path(path) do
-    true = File.dir? path
+  def validate_dir(nil), do: :ok
+  def validate_dir(dir) do
+    true = File.dir? dir
   end
 
   def start_link(config) do
@@ -327,20 +327,20 @@ defmodule Kvern.Store do
     save_to_disk(state)
   end
 
-  defp save_to_disk(%{config: %{path: nil}, name: name} = state) do
+  defp save_to_disk(%{config: %{dir: nil}, name: name} = state) do
     Logger.warn("Disk backup configuration not found for store #{inspect name}")
     state
   end
-  defp save_to_disk(%{config: %{path: false}, name: name} = state) do
+  defp save_to_disk(%{config: %{dir: false}, name: name} = state) do
     # backup disabled
     state
   end
-  defp save_to_disk(%{config: %{path: path}, name: name, storage: storage} = state)
-      when is_binary(path) do
+  defp save_to_disk(%{config: %{dir: dir}, name: name, storage: storage} = state)
+      when is_binary(dir) do
       case Storage.tainted?(storage) do
         false -> state
         true ->
-          saved_state = backup_to_disk(state, path)
+          saved_state = backup_to_disk(state, dir)
           # try do
           #   saved_state
           # rescue
@@ -351,12 +351,12 @@ defmodule Kvern.Store do
       end
   end
 
-  defp backup_to_disk(state, path) do
+  defp backup_to_disk(state, dir) do
     # Backup only the tainted elements.
     state.storage
       |> Storage.all_tainted_data()
       |> Stream.map(fn({key, value}) when is_binary(key) ->
-          Backup.write_file(path, key, value, state.config.backup_conf)
+          Backup.write_file(dir, key, value, state.config.backup_conf)
          end)
       |> Stream.map(&log_backup_errors/1)
       |> Stream.run
@@ -374,33 +374,33 @@ defmodule Kvern.Store do
   end
 
 
-  defp recover_storage(%{config: %{path: nil}, name: name} = state) do
+  defp recover_storage(%{config: %{dir: nil}, name: name} = state) do
     Logger.warn("Disk backup configuration not found for store #{inspect name}")
     state
   end
-  defp recover_storage(%{config: %{path: false}, name: name} = state) do
+  defp recover_storage(%{config: %{dir: false}, name: name} = state) do
     # backup disabled
     state
   end
-  defp recover_storage(%{config: %{path: path, backup_conf: bcf}, name: name, storage: storage} = state) do
-    case Backup.recover_dir(path, bcf) do
+  defp recover_storage(%{config: %{dir: dir, backup_conf: bcf}, name: name, storage: storage} = state) do
+    case Backup.recover_dir(dir, bcf) do
       {:error, _} = err ->
-        Logger.error("Could not recover storage for store #{inspect name} in #{path} : #{inspect err}")
+        Logger.error("Could not recover storage for store #{inspect name} in #{dir} : #{inspect err}")
         state
       {:ok, kvs} ->
         # Import all data but no need for the storage to be full tainted
         state = state
           |> Map.put(:storage, Storage.sys_import(kvs))
           |> Map.update!(:storage, &Storage.clear_tainted/1)
-        Logger.warn("Recovered store from #{path}")
+        Logger.warn("Recovered store from #{dir}")
         state
     end
   end
 
-  defp nuke_storage(%{config: %{path: path}, name: name} = state)
-      when is_binary(path) do
-    with {:ok, _} <- File.rm_rf(path) do
-      File.mkdir(path)
+  defp nuke_storage(%{config: %{dir: dir}, name: name} = state)
+      when is_binary(dir) do
+    with {:ok, _} <- File.rm_rf(dir) do
+      File.mkdir(dir)
     else
       other -> {:error, other}
     end
