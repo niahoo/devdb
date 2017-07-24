@@ -158,10 +158,10 @@ defmodule Kvern.Store do
         # Logger.debug("Received command #{inspect command}")
         case handle_command(state, command) do
           {:continue, reply, new_state} ->
+            state = new_state
+              |> maybe_save_dirty(command)
             reply_to(from, reply)
-            new_state
-            |> maybe_save_dirty(command)
-            |> main_loop()
+            main_loop(state)
           {:rollback, reply} ->
             reply_to(from, reply)
             state
@@ -180,12 +180,13 @@ defmodule Kvern.Store do
         main_loop(state)
       rcall(from, :commit)
           when transaction_owner === from_pid(from) ->
-        state = state |> transact_commit() |> ok!
+        state = state
+          |> transact_commit()
+          |> ok!
+          |> save_to_disk()
         reply_to(from, @confirm)
         # Logger.debug("Transaction committed for #{inspect from_pid(from)}")
-        state
-        |> save_to_disk()
-        |> main_loop()
+        main_loop(state)
       rcall(from, :rollback)
           when transaction_owner === from_pid(from) ->
         {:ok, state} = transact_rollback(state)
@@ -345,14 +346,14 @@ defmodule Kvern.Store do
       case Storage.tainted?(storage) do
         false -> state
         true ->
-          saved_state = backup_to_disk(state, dir)
-          # try do
-          #   saved_state
-          # rescue
-          #   e ->
-          #   Logger.error(Exception.message(e))
-          #   state
-          # end
+          try do
+            saved_state = backup_to_disk(state, dir)
+            saved_state
+          rescue
+            e ->
+            Logger.error(Exception.message(e))
+            state
+          end
       end
   end
 
