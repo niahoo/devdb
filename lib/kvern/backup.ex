@@ -3,11 +3,11 @@ defmodule Kvern.Backup do
   # The directory must exist. We check if the file exists. If it's the case, we
   # rename it to a .bak file and then write the new file
   def write_file(dir, key, value, config) do
-    ~M(codec) = config
+    ~M(codec, codec_encode_opts) = config
     filename = key_to_filename(key, codec.extension)
     fullpath = Path.join(dir, filename)
     with :ok <- copy_backup_file_if_exists(fullpath),
-         {:ok, encoded} <- codec.encode(value),
+         {:ok, encoded} <- codec.encode(value, codec_encode_opts),
          :ok <- write_data(fullpath, encoded)
       do
         {:ok, key}
@@ -46,7 +46,7 @@ defmodule Kvern.Backup do
   end
 
   def recover_dir(dir, config) do
-    ~M(codec) = config
+    ~M(codec, codec_decode_opts) = config
     extension = codec.extension
     try do
       {:ok, glob} = Regex.compile(".*\\.#{extension}$")
@@ -60,7 +60,7 @@ defmodule Kvern.Backup do
             path = Path.join(dir, f)
             bin = File.read!(path)
             key = remove_extension(f, extension)
-            case codec.decode(bin) do
+            case codec.decode(bin, codec_decode_opts) do
               {:ok, data} -> {key, data}
               _ -> nil
             end

@@ -5,4 +5,4 @@ config :logger,
   handle_sasl_reports: true
 
 config :logger, :console,
-  metadata: [:function]
+  metadata: [:function, :pid]

@@ -3,10 +3,9 @@ defmodule Kvern.Codec.Edn do
   def extension,
     do: "edn"
 
-  def encode(data),
-    do: Xdn.encode(data, pretty: true, iodata: false)
+  def encode(data, options),
+    do: Xdn.encode(data, options)
 
-  @todo "Handle user tag handlers"
-  def decode(string),
-    do: Xdn.decode(string)
+  def decode(string, options),
+    do: Xdn.decode(string, options)
 end

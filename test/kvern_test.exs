@@ -31,13 +31,12 @@ defmodule KvernTest do
   end
 
   def launch_store() do
-    {:ok, pid} = Kvern.open(
+    Kvern.open(
       name: @store,
       dir: @dir_1,
       codec: Kvern.Codec.Exs
     )
-    true = is_pid(pid)
-    {:ok, pid}
+    |> IO.inspect
   end
 
   test "key format" do
@@ -101,17 +100,23 @@ defmodule KvernTest do
   end
 
   test "EDN file format" do
-    {:ok, pid} = Kvern.open(
-      dir: @dir_2,
-      codec: Kvern.Codec.Edn
-    )
+    launch = fn ->
+      {:ok, pid} = Kvern.open(
+        dir: @dir_2,
+        codec: Kvern.Codec.Edn
+      )
+      pid
+    end
+    store = launch.()
     key = "edn-key-1"
     val = %{
       test: "value",
       submap: %{"a" => 1, "b" => 2, 123 => 4.5, [:list, As, "key"] => {:my_tuple_tag, "val"}},
     }
-    assert :ok === Kvern.put!(pid, key, val)
-    assert val = Kvern.fetch!(pid, key)
+    assert :ok === Kvern.put!(store, key, val)
+    Kvern.shutdown(store)
+    store = launch.()
+    assert ^val = Kvern.fetch!(store, key)
   end
 
   @todo "This test belongs to xdn repo"

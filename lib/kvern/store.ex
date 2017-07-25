@@ -61,6 +61,8 @@ defmodule Kvern.Store do
       name: Keyword.get(config, :name, nil),
       backup_conf: %{
         codec: Keyword.get(config, :codec, Kvern.Codec.Exs),
+        codec_encode_opts: Keyword.get(config, :codec_encode_opts, []),
+        codec_decode_opts: Keyword.get(config, :codec_decode_opts, []),
       }
     }
   end
@@ -79,17 +81,10 @@ defmodule Kvern.Store do
     File.dir? dir
   end
 
-  def start_link(config) do
-    config = validate_transform_config(config)
+  def start_link(args) do
     start = fn() ->
       Process.flag(:trap_exit, true)
-      name = Map.get(config, :name)
-      case name do
-        nil -> :ok
-        name ->
-          {:ok, _self} = Registry.register(@registry, name, __MODULE__)
-      end
-      init(config)
+      init(args)
     end
     :plain_fsm.start_opt(__MODULE__, start, 1000, [:link])
   end
@@ -121,17 +116,25 @@ defmodule Kvern.Store do
 
   # -- Database initialization ------------------------------------------------
 
-  def init(config) do
+  def init(args) do
+    config = validate_transform_config(args)
+    name = Map.get(config, :name)
+    case name do
+      nil -> :ok
+      name ->
+        {:ok, _self} = Registry.register(@registry, name, __MODULE__)
+    end
     # Logger.debug("#{__MODULE__} initializing ...")
     storage = Storage.new
     name = config.name
-    state = ~M(%S config, storage, name)
-    # Logger.debug("#{__MODULE__} initialized.")
-    {:reply, {:ok, self()}, fn ->
-      state
-        |> recover_storage()
-        |> main_loop()
-    end}
+    ~M(%S config, storage, name)
+    |> recover_storage()
+    |> case do
+        {:ok, state} ->
+          {:reply, {:ok, self()}, fn -> main_loop(state) end}
+        {:error, _} = err ->
+          {:reply, err, fn -> exit(:could_not_recover_storage) end}
+       end
   end
 
   def data_vsn(),
@@ -228,12 +231,13 @@ defmodule Kvern.Store do
     # Logger.error("@todo implement")
     IO.puts "Dump store #{name}"
     codec = state.config.backup_conf.codec
+    codec_encode_opts = state.config.backup_conf.codec_encode_opts
     storage
       |> Storage.kv_all
       |> Enum.map(fn {k, v} ->
           [
             "[", k, "]\n",
-            case codec.encode(v) do
+            case codec.encode(v, codec_encode_opts) do
               {:ok, str} -> str
               {:error, _} = err -> inspect(err)
             end,
@@ -392,7 +396,7 @@ defmodule Kvern.Store do
     case Backup.recover_dir(dir, bcf) do
       {:error, _} = err ->
         Logger.error("Could not recover storage for store #{inspect name} in #{dir} : #{inspect err}")
-        state
+        err
       {:ok, kvs} ->
         # Import all data but no need for the storage to be full tainted
         state = state
@@ -402,7 +406,7 @@ defmodule Kvern.Store do
           |> Enum.map(fn {k,_} -> "* " <> k end)
           |> Enum.join("\n")
         Logger.warn("Recovered store from #{dir} : \n#{keys_list}")
-        state
+        {:ok, state}
     end
   end
 
