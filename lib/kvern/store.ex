@@ -21,7 +21,7 @@ defmodule GenHelp do
 end
 
 defmodule Kvern.Store do
-  use PlainFsm
+  use GenLoop
   require Logger
   import GenHelp
   import ShorterMaps
