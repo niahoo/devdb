@@ -53,7 +53,7 @@ defmodule Kvern.Backup do
       data = dir
         |> File.ls!
         |> Enum.filter(fn f ->
-            k = remove_extension(f, extension)
+            remove_extension(f, extension)
             Regex.match?(glob, f) and Kvern.valid_key?(f)
           end)
         |> Enum.map(fn f ->

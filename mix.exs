@@ -33,7 +33,7 @@ defmodule Kvern.Mixfile do
       {:plain_fsm_ex, github: "ashneyderman/plain_fsm_ex", branch: "master"},
       {:plain_fsm, github: "uwiger/plain_fsm", override: true},
       {:shorter_maps, "~> 2.1"},
-      {:xdn, path: "../xdn"},
+      # {:xdn, path: "../xdn"},
       {:mutex, "~> 1.0.0", only: :test},
       {:decompilerl, github: "niahoo/decompilerl"},
       {:poison, "~> 3.1"},

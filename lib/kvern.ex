@@ -38,12 +38,17 @@ defmodule Kvern do
   def open(name) when is_atom(name),
     do: open([name: name])
   def open(config) when is_list(config) do
-    Supervisor.start_child(Kvern.StoreSupervisor, [config])
+    result = Supervisor.start_child(Kvern.StoreSupervisor, [config])
+    IO.puts "Opened Kvern"
+         <> "\n\tconfig: #{inspect config}"
+         <> "\n\tresult: #{inspect result}"
+    result
   end
 
   def put(db, key, value) do
     with :ok <- check_valid_key(key) do
       send_command(db, {:kv_put, key, value})
+      :ok
     end
   end
 
@@ -52,26 +57,35 @@ defmodule Kvern do
   end
 
   def get(db, key, default \\ nil) do
-    case send_command(db, {:kv_get, key}) do
-      nil -> default
-      value -> value
+    send_command(db, {:kv_read, :get, [key, default]})
+  end
+
+  def get_lazy(db, key, fun) do
+    # fun must be executed in the calling process
+    case get(db, key, {:not_found, key}) do
+      {:not_found, ^key} -> fun.()
+      val -> val
     end
   end
 
   def fetch(db, key) do
-    send_command(db, {:kv_fetch, key})
+    send_command(db, {:kv_read, :fetch, [key]})
   end
 
   def fetch!(db, key) do
-    {:ok, val} = send_command(db, {:kv_fetch, key})
-    val
+    case fetch(db, key) do
+      {:ok, val} -> val
+      :error ->
+        raise(KeyError, key: key, term: {__MODULE__, db})
+    end
   end
 
   def keys(db) do
-    case send_command(db, :kv_keys) do
-      {:ok, keys} -> keys
-      other -> other
-    end
+    send_command(db, {:kv_read, :keys, []})
+  end
+
+  def delete(db, key) do
+    send_command(db, {:kv_delete, key})
   end
 
   def print_dump(db) do
@@ -99,6 +113,9 @@ defmodule Kvern do
 
       def get(key, default \\ nil),
         do: Kvern.get(unquote(name), key, default)
+
+      def get_lazy(key, fun),
+        do: Kvern.get(unquote(name), key, fun)
 
       def fetch(key),
         do: Kvern.fetch(unquote(name), key)

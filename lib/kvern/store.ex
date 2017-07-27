@@ -21,24 +21,27 @@ defmodule GenHelp do
 end
 
 defmodule Kvern.Store do
-  use GenLoop
+  use PlainFsm
   require Logger
   import GenHelp
   import ShorterMaps
-  alias Kvern.Storage
   alias Kvern.Backup
 
   defmodule S do
-    defstruct [:name, :config, :transaction_owner, :transaction_monitor, :backup, :storage]
+    defstruct [
+      name: nil,
+      config: nil,
+      transaction_owner: nil,
+      transaction_monitor: nil,
+      backup: nil,
+      storage: %{},
+      tainted: [],
+      deleted: [],
+    ]
   end
 
   @registry Kvern.Registry
   @confirm :ok
-
-  @typedoc """
-  Transaction reference
-  """
-  @type tref :: reference
 
   # -- Client side API --------------------------------------------------------
 
@@ -83,10 +86,10 @@ defmodule Kvern.Store do
 
   def start_link(args) do
     start = fn() ->
-      Process.flag(:trap_exit, true)
       init(args)
     end
-    :plain_fsm.start_opt(__MODULE__, start, 1000, [:link])
+    res = :plain_fsm.start_opt(__MODULE__, start, 1000, [:link])
+    res
   end
 
   def send_command(db, command) do
@@ -124,10 +127,7 @@ defmodule Kvern.Store do
       name ->
         {:ok, _self} = Registry.register(@registry, name, __MODULE__)
     end
-    # Logger.debug("#{__MODULE__} initializing ...")
-    storage = Storage.new
-    name = config.name
-    ~M(%S config, storage, name)
+    inited = ~M(%S config, name)
     |> recover_storage()
     |> case do
         {:ok, state} ->
@@ -151,14 +151,12 @@ defmodule Kvern.Store do
   end
 
   def main_loop(state) do
-    # # Logger.debug("Enter loop #{inspect state.name}")
     ~M(transaction_owner) = state # nil if not in transaction
     ereceive do
       # handling a command. The current transaction pid must be nil or be
       # equal to the caller's
       rcall(from, {:command, command})
           when transaction_owner in [nil, from_pid(from)] ->
-        # Logger.debug("Received command #{inspect command}")
         case handle_command(state, command) do
           {:continue, reply, new_state} ->
             state = new_state
@@ -172,14 +170,11 @@ defmodule Kvern.Store do
               |> ok!
               |> main_loop()
         end
-      # Starting a transaction. Once the transaction is started, we send the
-      # tref to the client
+      # Starting a transaction.
       rcall(from, {:begin, client_pid})
           when transaction_owner === nil ->
-        client_pid = from_pid(from)
         {:ok, state} = transact_begin(state, client_pid)
         reply_to(from, @confirm)
-        # Logger.debug("Transaction started for #{inspect client_pid}")
         main_loop(state)
       rcall(from, :commit)
           when transaction_owner === from_pid(from) ->
@@ -188,7 +183,6 @@ defmodule Kvern.Store do
           |> ok!
           |> save_to_disk()
         reply_to(from, @confirm)
-        # Logger.debug("Transaction committed for #{inspect from_pid(from)}")
         main_loop(state)
       rcall(from, :rollback)
           when transaction_owner === from_pid(from) ->
@@ -233,7 +227,6 @@ defmodule Kvern.Store do
     codec = state.config.backup_conf.codec
     codec_encode_opts = state.config.backup_conf.codec_encode_opts
     storage
-      |> Storage.kv_all
       |> Enum.map(fn {k, v} ->
           [
             "[", k, "]\n",
@@ -250,7 +243,6 @@ defmodule Kvern.Store do
   defp transact_begin(state, client_pid) do
     # we will keep the current data in a safe place, and store the monitor ref
     # for the client to listen to DOWN messages.
-    tref = make_ref()
     mref = Process.monitor(client_pid)
     ~M(storage) = state
     state = state
@@ -326,11 +318,9 @@ defmodule Kvern.Store do
     state
   end
   # must write
-  defp maybe_save_dirty(state, {:kv_put, _, _}), do: save_to_disk(state)
+  defp maybe_save_dirty(state, {:kv_write, _, _}), do: save_to_disk(state)
   # no need to write
-  defp maybe_save_dirty(state, {:kv_get, _}), do: state
-  defp maybe_save_dirty(state, {:kv_fetch, _}), do: state
-  defp maybe_save_dirty(state, :kv_keys), do: state
+  defp maybe_save_dirty(state, {:kv_read, _, _}), do: state
   # don't know, so we should write
   defp maybe_save_dirty(state, command) do
     Logger.error("Unsure if command should write to disk : #{inspect command}, saving to disk")
@@ -347,7 +337,7 @@ defmodule Kvern.Store do
   end
   defp save_to_disk(%{config: %{dir: dir}, name: name, storage: storage} = state)
       when is_binary(dir) do
-      case Storage.tainted?(storage) do
+      case storage_tainted?(state) do
         false -> state
         true ->
           try do
@@ -363,20 +353,27 @@ defmodule Kvern.Store do
 
   defp backup_to_disk(state, dir) do
     # Backup only the tainted elements.
-    state.storage
-      |> Storage.all_tainted_data()
-      |> Stream.map(fn({key, value}) when is_binary(key) ->
-          Backup.write_file(dir, key, value, state.config.backup_conf)
-         end)
-      |> Stream.map(&log_backup_errors/1)
-      |> Stream.run
+    ~M(tainted, deleted, storage) = state
+
+    tainted
+    |> Stream.map(fn(key) when is_binary(key) ->
+        value = Map.fetch!(storage, key)
+        Backup.write_file(dir, key, value, state.config.backup_conf)
+       end)
+    |> Enum.map(&log_backup_errors/1)
+
+    deleted
+    |> Stream.map(fn(key) when is_binary(key) ->
+        IO.puts "@todo deleted backup"
+       end)
+    |> Enum.map(&log_backup_errors/1)
+
     state
-      |> Map.update!(:storage, &Storage.clear_tainted/1)
-    state
+      |> Map.put(:tainted, [])
+      |> Map.put(:deleted, [])
   end
 
   defp log_backup_errors({:ok, key}) do
-    Logger.debug("SAVED #{key}")
   end
 
   defp log_backup_errors({:error, {err, key}}) do
@@ -386,11 +383,11 @@ defmodule Kvern.Store do
 
   defp recover_storage(%{config: %{dir: nil}, name: name} = state) do
     Logger.warn("Disk backup configuration not found for store #{inspect name}")
-    state
+    {:ok, state}
   end
   defp recover_storage(%{config: %{dir: false}, name: name} = state) do
     # backup disabled
-    state
+    {:ok, state}
   end
   defp recover_storage(%{config: %{dir: dir, backup_conf: bcf}, name: name, storage: storage} = state) do
     case Backup.recover_dir(dir, bcf) do
@@ -400,8 +397,7 @@ defmodule Kvern.Store do
       {:ok, kvs} ->
         # Import all data but no need for the storage to be full tainted
         state = state
-          |> Map.put(:storage, Storage.sys_import(kvs))
-          |> Map.update!(:storage, &Storage.clear_tainted/1)
+          |> Map.put(:storage, kvs)
         keys_list = kvs
           |> Enum.map(fn {k,_} -> "* " <> k end)
           |> Enum.join("\n")
@@ -420,29 +416,38 @@ defmodule Kvern.Store do
   end
   defp nuke_storage(_), do: :ok # no storage
 
-  # -- Internal Data Structures -----------------------------------------------
-
   defp run_command(state, {:kv_put, key, value}) do
     state
-    |> Map.update!(:storage, &Storage.kv_put(&1, key, value))
+    |> Map.update!(:storage, &Map.put(&1, key, value))
+    |> mark_tainted(key)
     |> ok()
   end
 
-  defp run_command(state, {:kv_fetch, key}) do
-    {:reply, Storage.kv_fetch(state.storage, key)}
+  defp run_command(state, {:kv_delete, key}) do
+    state
+    |> Map.update!(:storage, &Map.delete(&1, key))
+    |> mark_deleted(key)
+    |> ok()
   end
 
-  defp run_command(state, {:kv_get, key}) do
-    {:reply, Storage.kv_get(state.storage, key)}
-  end
-
-  defp run_command(state, :kv_keys) do
-    {:reply, Storage.kv_keys(state.storage)}
+  defp run_command(state, {:kv_read, afun, args}) do
+    {:reply, apply(Map, afun, [state.storage|args])}
   end
 
   defp run_command(state, command) do
     raise "Unknown command #{inspect command}"
   end
+
+  defp mark_tainted(state, key) do
+    Map.update!(state, :tainted, fn list -> [key|list] end)
+  end
+
+  defp mark_deleted(state, key) do
+    Map.update!(state, :deleted, fn list -> [key|list] end)
+  end
+
+  defp storage_tainted?(%{tainted: [], deleted: []}), do: false
+  defp storage_tainted?(_), do: true
 
 end
 
