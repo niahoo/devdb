@@ -356,17 +356,17 @@ defmodule Kvern.Store do
     ~M(tainted, deleted, storage) = state
 
     tainted
-    |> Stream.map(fn(key) when is_binary(key) ->
-        value = Map.fetch!(storage, key)
-        Backup.write_file(dir, key, value, state.config.backup_conf)
-       end)
-    |> Enum.map(&log_backup_errors/1)
+      |> Stream.map(fn(key) when is_binary(key) ->
+          value = Map.fetch!(storage, key)
+          Backup.write_file(dir, key, value, state.config.backup_conf)
+         end)
+      |> Enum.map(&log_backup_errors/1)
 
     deleted
-    |> Stream.map(fn(key) when is_binary(key) ->
-        IO.puts "@todo deleted backup"
-       end)
-    |> Enum.map(&log_backup_errors/1)
+      |> Stream.map(fn(key) when is_binary(key) ->
+          IO.puts "@todo deleted backup"
+         end)
+      |> Enum.map(&log_backup_errors/1)
 
     state
       |> Map.put(:tainted, [])
