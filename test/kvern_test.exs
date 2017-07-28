@@ -3,7 +3,6 @@ defmodule KvernTest do
   doctest Kvern
 
   @store __MODULE__
-  @mutex KvernTest.Mutex
 
   @dir_1 (
     File.cwd! |> Path.join("test/stores/d1")
@@ -14,12 +13,6 @@ defmodule KvernTest do
   )
 
   setup_all do
-    # use a mutex to linearize all tests
-    children = [
-      Mutex.child_spec(@mutex)
-    ]
-    {:ok, _pid} = Supervisor.start_link(children, strategy: :one_for_one)
-
     # setup Kvern
     File.rm_rf! @dir_1
     File.mkdir_p! @dir_1
@@ -53,7 +46,6 @@ defmodule KvernTest do
   end
 
   test "put / get simple value" do
-    lock()
     key = "mykey"
     val = :some_value
     assert :ok === Kvern.put!(@store, key, val)
@@ -62,20 +54,16 @@ defmodule KvernTest do
     assert :__hey__ === Kvern.get(@store, "__no_exist__", :__hey__)
     recup = Kvern.get(@store, key)
     assert recup === val
-    goodbye()
   end
 
   test "get lazy" do
-    lock()
     key = "my_lazy_key"
     assert :ok === Kvern.delete(@store, key)
     assert :error === Kvern.fetch(@store, key)
     assert :generated = Kvern.get_lazy(@store, key, fn -> :generated end)
-    goodbye()
   end
 
   test "keys and delete" do
-    lock()
     keys_before = Kvern.keys(@store)
     assert(not "k1" in keys_before)
     assert(not "k2" in keys_before)
@@ -92,11 +80,18 @@ defmodule KvernTest do
     assert :ok === Kvern.delete(@store, "k3")
     keys_end = Kvern.keys(@store)
     assert (Enum.sort(keys_end) === Enum.sort(keys_before))
-    goodbye()
+  end
+
+  test "delete / recover" do
+    key = "ghost"
+    assert :ok === Kvern.put(@store, key, "Tom Joad")
+    assert :ok === Kvern.delete(@store, key)
+    Kvern.shutdown(@store)
+    {:ok, _pid} = launch_store()
+    assert :error = Kvern.fetch(@store, key)
   end
 
   test "simple transaction" do
-    lock()
     key = "tkey"
     val = %{xyz: "This is some value"}
     assert :ok === Kvern.put!(@store, key, val)
@@ -105,27 +100,21 @@ defmodule KvernTest do
     assert "__some_other_value__" === Kvern.get(@store, key)
     assert :ok === Kvern.rollback(@store)
     assert val === Kvern.get(@store, key)
-    goodbye()
   end
 
   test "call by pid" do
-    lock()
     [{pid, _}] = Registry.lookup(Kvern.Registry, @store)
     assert is_pid(pid)
     assert :ok === Kvern.put(pid, "ignore", :ignore)
-    goodbye()
   end
 
   test "restore" do
-    lock()
     :ok = Kvern.nuke_storage(@store)
     :ok = Kvern.put(@store, "my-key-1", :my_value_1)
     :ok = Kvern.put(@store, "my-key-2", :my_value_2)
     Kvern.shutdown(@store)
-    {:ok, _pid} =
-      launch_store()
+    {:ok, _pid} = launch_store()
     assert :my_value_1 = Kvern.fetch!(@store, "my-key-1")
-    goodbye()
   end
 
   test "EDN file format" do
@@ -156,11 +145,4 @@ defmodule KvernTest do
     #   md5 |> Xdn.encode! |> Xdn.decode!
   end
 
-  def lock() do
-    Mutex.await(@mutex, @store)
-  end
-
-  def goodbye() do
-    Mutex.goodbye(@mutex)
-  end
 end

@@ -38,11 +38,7 @@ defmodule Kvern do
   def open(name) when is_atom(name),
     do: open([name: name])
   def open(config) when is_list(config) do
-    result = Supervisor.start_child(Kvern.StoreSupervisor, [config])
-    IO.puts "Opened Kvern"
-         <> "\n\tconfig: #{inspect config}"
-         <> "\n\tresult: #{inspect result}"
-    result
+    Supervisor.start_child(Kvern.StoreSupervisor, [config])
   end
 
   def put(db, key, value) do

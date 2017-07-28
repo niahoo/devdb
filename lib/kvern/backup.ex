@@ -1,5 +1,9 @@
 defmodule Kvern.Backup do
+  use TODO
   import ShorterMaps
+
+  @todo "1.0.0": "Rename Backup -> Backend"
+
   # The directory must exist. We check if the file exists. If it's the case, we
   # rename it to a .bak file and then write the new file
   def write_file(dir, key, value, config) do
@@ -42,6 +46,17 @@ defmodule Kvern.Backup do
         :ok
       {:error, _} = err ->
         {:error, {:could_not_write_file, path, content, err}}
+    end
+  end
+
+  def delete_file(dir, key, ~M(codec)) do
+    filename = key_to_filename(key, codec.extension)
+    fullpath = Path.join(dir, filename)
+    case File.rm(fullpath) do
+      :ok ->
+        {:ok, key}
+      {:error, posix} = err ->
+        {:error, {{:could_not_delete_file, fullpath, posix}, key}}
     end
   end
 

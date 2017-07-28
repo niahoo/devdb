@@ -3,11 +3,18 @@ defmodule Kvern.Mixfile do
 
   def project do
     [app: :kvern,
+     description: """
+     This package implements a simple key/value store backed by human readable
+     disk files.
+     """,
      version: "0.1.0",
      elixir: "~> 1.4",
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
-     deps: deps()]
+     deps: deps(),
+     name: "Kvern",
+     package: package(),
+   ]
   end
 
   # Configuration for the OTP application
@@ -30,13 +37,24 @@ defmodule Kvern.Mixfile do
   # Type "mix help deps" for more examples and options
   defp deps do
     [
-      {:plain_fsm_ex, github: "ashneyderman/plain_fsm_ex", branch: "master"},
-      {:plain_fsm, github: "uwiger/plain_fsm", override: true},
-      {:shorter_maps, "~> 2.1"},
+      # dev
+      {:decompilerl, github: "niahoo/decompilerl", only: :dev},
+      {:ex_doc, "~> 0.14", only: :dev, runtime: false},
+      {:todo, "~> 1.3", runtime: false},
+
+      # runtime
       # {:xdn, path: "../xdn"},
-      {:mutex, "~> 1.0.0", only: :test},
-      {:decompilerl, github: "niahoo/decompilerl"},
-      {:poison, "~> 3.1"},
+      {:plain_fsm, github: "uwiger/plain_fsm", override: true},
+      {:plain_fsm_ex, github: "ashneyderman/plain_fsm_ex", branch: "master"},
+      {:shorter_maps, "~> 2.1"},
+    ]
+  end
+
+  defp package() do
+    [
+      licenses: ["MIT"],
+      maintainers: ["niahoo osef <dev@ooha.in>"],
+      links: %{"Github" => "https://github.com/niahoo/kvern"},
     ]
   end
 end

@@ -192,14 +192,11 @@ defmodule Kvern.Store do
         main_loop(state)
       rcall(from, :shutdown)
           when transaction_owner === nil ->
-        Logger.warn("Unregistering ...")
         Registry.unregister(@registry, state.name)
-        Logger.warn("Shutting down ...")
         reply_to(from, :ok)
         :ok # ---------------------------- NO LOOP ---------------------
       rcall(from, :nuke_storage)
           when transaction_owner === nil ->
-        Logger.warn("Nuking storage")
         reply_to(from, nuke_storage(state))
         main_loop(state)
       rcast(:print_dump) ->
@@ -222,7 +219,6 @@ defmodule Kvern.Store do
 
   defp print_dump(state) do
     ~M(name, storage) = state
-    # Logger.error("@todo implement")
     IO.puts "Dump store #{name}"
     codec = state.config.backup_conf.codec
     codec_encode_opts = state.config.backup_conf.codec_encode_opts
@@ -319,11 +315,13 @@ defmodule Kvern.Store do
   end
   # must write
   defp maybe_save_dirty(state, {:kv_write, _, _}), do: save_to_disk(state)
+  defp maybe_save_dirty(state, {:kv_put, _, _}), do: save_to_disk(state)
+  defp maybe_save_dirty(state, {:kv_delete, _}), do: save_to_disk(state)
   # no need to write
   defp maybe_save_dirty(state, {:kv_read, _, _}), do: state
   # don't know, so we should write
   defp maybe_save_dirty(state, command) do
-    Logger.error("Unsure if command should write to disk : #{inspect command}, saving to disk")
+    Logger.warn("Unsure if command should write to disk : #{inspect command}, saving to disk")
     save_to_disk(state)
   end
 
@@ -353,18 +351,19 @@ defmodule Kvern.Store do
 
   defp backup_to_disk(state, dir) do
     # Backup only the tainted elements.
-    ~M(tainted, deleted, storage) = state
+    ~M(tainted, deleted, storage, config) = state
+    ~M(backup_conf) = config
 
     tainted
       |> Stream.map(fn(key) when is_binary(key) ->
           value = Map.fetch!(storage, key)
-          Backup.write_file(dir, key, value, state.config.backup_conf)
+          Backup.write_file(dir, key, value, backup_conf)
          end)
       |> Enum.map(&log_backup_errors/1)
 
     deleted
       |> Stream.map(fn(key) when is_binary(key) ->
-          IO.puts "@todo deleted backup"
+          Backup.delete_file(dir, key, backup_conf)
          end)
       |> Enum.map(&log_backup_errors/1)
 
@@ -401,7 +400,6 @@ defmodule Kvern.Store do
         keys_list = kvs
           |> Enum.map(fn {k,_} -> "* " <> k end)
           |> Enum.join("\n")
-        Logger.warn("Recovered store from #{dir} : \n#{keys_list}")
         {:ok, state}
     end
   end
