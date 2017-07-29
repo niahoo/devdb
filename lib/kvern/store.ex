@@ -127,7 +127,7 @@ defmodule Kvern.Store do
       name ->
         {:ok, _self} = Registry.register(@registry, name, __MODULE__)
     end
-    inited = ~M(%S config, name)
+    ~M(%S config, name)
     |> recover_storage()
     |> case do
         {:ok, state} ->
