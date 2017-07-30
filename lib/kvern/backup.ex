@@ -63,28 +63,28 @@ defmodule Kvern.Backup do
   def recover_dir(dir, config) do
     ~M(codec, codec_decode_opts) = config
     extension = codec.extension
-    try do
-      {:ok, glob} = Regex.compile(".*\\.#{extension}$")
-      data = dir
-        |> File.ls!
-        |> Enum.filter(fn f ->
-            remove_extension(f, extension)
-            Regex.match?(glob, f) and Kvern.valid_key?(f)
-          end)
-        |> Enum.map(fn f ->
-            path = Path.join(dir, f)
-            bin = File.read!(path)
-            key = remove_extension(f, extension)
-            case codec.decode(bin, codec_decode_opts) do
-              {:ok, data} -> {key, data}
-              _ -> nil
-            end
-           end)
-        |> Enum.into(%{})
-      {:ok, data}
-    rescue
-      e -> {:error, e}
-    end
+    # try do
+    {:ok, glob} = Regex.compile(".*\\.#{extension}$")
+    data = dir
+      |> File.ls!
+      |> Enum.filter(fn f ->
+          remove_extension(f, extension)
+          Regex.match?(glob, f) and Kvern.valid_key?(f)
+        end)
+      |> Enum.map(fn f ->
+          path = Path.join(dir, f)
+          bin = File.read!(path)
+          key = remove_extension(f, extension)
+          case codec.decode(bin, codec_decode_opts) do
+            {:ok, data} -> {key, data}
+            other -> {:error, :bad_data, key, other}
+          end
+         end)
+      |> Enum.into(%{})
+    {:ok, data}
+    # rescue
+      # e -> {:error, e}
+    # end
   end
 
   @todo "Should we fail if extension not found ?"
