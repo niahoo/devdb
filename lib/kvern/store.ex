@@ -389,6 +389,7 @@ defmodule Kvern.Store do
     {:ok, state}
   end
   defp recover_storage(%{config: %{dir: dir, backup_conf: bcf}, name: name, storage: storage} = state) do
+    Logger.info("Recovering storage for store #{inspect name} in #{dir}.")
     case Backup.recover_dir(dir, bcf) do
       {:error, _} = err ->
         Logger.error("Could not recover storage for store #{inspect name} in #{dir} : #{inspect err}")
@@ -399,7 +400,9 @@ defmodule Kvern.Store do
           |> Map.put(:storage, kvs)
         keys_list = kvs
           |> Enum.map(fn {k,_} -> "* " <> k end)
+          |> List.insert_at(0, "\n")
           |> Enum.join("\n")
+          |> Logger.debug()
         {:ok, state}
     end
   end
