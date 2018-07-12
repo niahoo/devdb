@@ -49,6 +49,7 @@ defmodule KvernTest do
 
   test "keys and delete" do
     keys_before = Kvern.keys(@store)
+    assert is_list(keys_before)
     assert(not ("k1" in keys_before))
     assert(not ("k2" in keys_before))
     assert(not ("k3" in keys_before))
@@ -75,6 +76,7 @@ defmodule KvernTest do
     assert :error = Kvern.fetch(@store, key)
   end
 
+  @tag :skip
   test "simple transaction" do
     key = "tkey"
     val = %{xyz: "This is some value"}
@@ -86,12 +88,14 @@ defmodule KvernTest do
     assert val === Kvern.get(@store, key)
   end
 
+  @tag :skip
   test "call by pid" do
     [{pid, _}] = Registry.lookup(Kvern.Registry, @store)
     assert is_pid(pid)
     assert :ok === Kvern.put(pid, "ignore", :ignore)
   end
 
+  @tag :skip
   @tag :skip
   test "restore" do
     :ok = Kvern.nuke_storage(@store)

@@ -3,6 +3,7 @@ defmodule Kvern.Store do
   import ShorterMaps
   use GenLoop, enter: :main_loop
   alias Kvern.Backup
+  alias Kvern.Repo
 
   defmodule S do
     defstruct name: nil,
@@ -10,7 +11,7 @@ defmodule Kvern.Store do
               transaction_owner: nil,
               transaction_monitor: nil,
               backup: nil,
-              storage: %{},
+              storage: nil,
               tainted: [],
               deleted: []
   end
@@ -75,7 +76,14 @@ defmodule Kvern.Store do
     name = Keyword.get(opts, :name)
     IO.puts("Initializing store #{inspect(name)}")
 
-    state = %S{config: opts, name: name}
+    state = %S{
+      config: opts,
+      name: name,
+      storage: Repo.new(Kvern.Repo.Ets)
+    }
+
+    IO.puts("@todo seed storage with provided seeders")
+
     {:ok, state}
   end
 
@@ -267,20 +275,20 @@ defmodule Kvern.Store do
 
   defp run_command(state, {:kv_put, key, value}) do
     state
-    |> Map.update!(:storage, &Map.put(&1, key, value))
+    |> Map.update!(:storage, &Repo.put(&1, key, value))
     |> mark_tainted(key)
     |> wok()
   end
 
   defp run_command(state, {:kv_delete, key}) do
     state
-    |> Map.update!(:storage, &Map.delete(&1, key))
+    |> Map.update!(:storage, &Repo.delete(&1, key))
     |> mark_deleted(key)
     |> wok()
   end
 
-  defp run_command(state, {:kv_read, afun, args}) do
-    {:reply, apply(Map, afun, [state.storage | args])}
+  defp run_command(state, {:kv_read, read_fun, args}) do
+    {:reply, apply(Repo, read_fun, [state.storage | args])}
   end
 
   defp run_command(state, command) do
@@ -299,17 +307,17 @@ defmodule Kvern.Store do
   defp storage_tainted?(_), do: true
 
   defp maybe_save_dirty(state, command) do
-    IO.puts("@todo maybe_save_dirty #{inspect(command)}")
+    # IO.puts("@todo maybe_save_dirty #{inspect(command)}")
     state
   end
 
   defp save_to_disk(state) do
-    IO.puts("@todo save_to_disk")
+    # IO.puts("@todo save_to_disk")
     state
   end
 
   defp nuke_storage(state) do
-    IO.puts("@todo nuke_storage")
+    # IO.puts("@todo nuke_storage")
     state
   end
 end
