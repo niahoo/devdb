@@ -1,55 +1,37 @@
 defmodule Kvern do
   alias Kvern.Store
   import Store, only: [send_command: 2]
+  use Unsafe.Generator, docs: false
   defdelegate begin(db), to: Store
   defdelegate commit(db), to: Store
   defdelegate rollback(db), to: Store
+
+  @unsafe [
+    {
+      :put,
+      3,
+      :unwrap_put
+    }
+    # {
+    #   :fetch,
+    #   2,
+    #   :unwrap_fetch
+    # }
+  ]
 
   @key_maxlen 50
 
   def key_maxlen, do: @key_maxlen
 
-  @doc """
-  The key/value stores backups data to disk. To be sure that the filename will
-  be acceptable on any playform, we set very strict rules:
-  - Only letters, numbers, dots, dashes and underscores
-  - Starts with a letter
-  - Max lenght 30 (byte length)
-  """
-  def check_valid_key(key) when not is_binary(key),
-    do: {:error, {:bad_key, :not_binary, key}}
-
-  def check_valid_key(key) when byte_size(key) > @key_maxlen,
-    do: {:error, {:bad_key, :too_long, key}}
-
-  def check_valid_key(key) do
-    ~r/^[a-zA-Z]+[\.0-9a-zA-Z_-]*$/
-    |> Regex.match?(key)
-    |> if(do: :ok, else: {:error, {:bad_key, :bad_characters, key}})
+  def open(name, opts \\ []) when is_atom(name) do
+    opts = opts |> Keyword.put(:name, name)
+    Supervisor.start_child(Kvern.StoreSupervisor, [opts])
   end
 
-  def valid_key?(key) do
-    case check_valid_key(key) do
-      :ok -> true
-      _ -> false
-    end
-  end
-
-  def open(name) when is_atom(name),
-    do: open([name: name])
-  def open(config) when is_list(config) do
-    Supervisor.start_child(Kvern.StoreSupervisor, [config])
-  end
+  def whereis(name), do: Store.whereis(name)
 
   def put(db, key, value) do
-    with :ok <- check_valid_key(key) do
-      send_command(db, {:kv_put, key, value})
-      :ok
-    end
-  end
-
-  def put!(db, key, value) do
-    :ok = put(db, key, value)
+    send_command(db, {:kv_put, key, value})
   end
 
   def get(db, key, default \\ nil) do
@@ -57,10 +39,24 @@ defmodule Kvern do
   end
 
   def get_lazy(db, key, fun) do
+    begin(db)
     # fun must be executed in the calling process
     case get(db, key, {:not_found, key}) do
-      {:not_found, ^key} -> fun.()
-      val -> val
+      {:not_found, ^key} ->
+        try do
+          val = fun.()
+          put!(db, key, val)
+          commit(db)
+          val
+        rescue
+          e ->
+            stacktrace = System.stacktrace()
+            rollback(db)
+            reraise(e, stacktrace)
+        end
+
+      val ->
+        val
     end
   end
 
@@ -68,13 +64,7 @@ defmodule Kvern do
     send_command(db, {:kv_read, :fetch, [key]})
   end
 
-  def fetch!(db, key) do
-    case fetch(db, key) do
-      {:ok, val} -> val
-      :error ->
-        raise(KeyError, key: key, term: {__MODULE__, db})
-    end
-  end
+  def fetch!(db, key), do: unwrap_fetch(fetch(db, key), db, key)
 
   def keys(db) do
     send_command(db, {:kv_read, :keys, []})
@@ -96,41 +86,38 @@ defmodule Kvern do
     GenServer.call(Store.via(db), :shutdown)
   end
 
+  def unwrap_put(:ok), do: :ok
+  def unwrap_put({:error, reason}), do: raise("could not put #{inspect(reason)}")
+
+  def unwrap_fetch({:ok, val}), do: val
+  def unwrap_fetch(:error, db, key), do: raise(KeyError, key: key, term: {__MODULE__, db})
+
   # Defines a simple macro that hardcode the store name in the calls to the API
   # @optimize : this doubles every function call ...
+  @todo "accept a callback to transform the keys"
   defmacro __using__(opts) do
     name = Keyword.fetch!(opts, :name)
+
     quote do
-      def put(key, value),
-        do: Kvern.put(unquote(name), key, value)
+      def put(key, value), do: Kvern.put(unquote(name), key, value)
 
-      def put!(key, value),
-        do: Kvern.put!(unquote(name), key, value)
+      def put!(key, value), do: Kvern.put!(unquote(name), key, value)
 
-      def get(key, default \\ nil),
-        do: Kvern.get(unquote(name), key, default)
+      def get(key, default \\ nil), do: Kvern.get(unquote(name), key, default)
 
-      def get_lazy(key, fun),
-        do: Kvern.get(unquote(name), key, fun)
+      def get_lazy(key, fun), do: Kvern.get(unquote(name), key, fun)
 
-      def fetch(key),
-        do: Kvern.fetch(unquote(name), key)
+      def fetch(key), do: Kvern.fetch(unquote(name), key)
 
-      def fetch!(key),
-        do: Kvern.fetch!(unquote(name), key)
+      def fetch!(key), do: Kvern.fetch!(unquote(name), key)
 
-      def keys(),
-        do: Kvern.keys(unquote(name))
+      def keys(), do: Kvern.keys(unquote(name))
 
-      def print_dump(),
-        do: Kvern.print_dump(unquote(name))
+      def print_dump(), do: Kvern.print_dump(unquote(name))
 
-      def nuke_storage(),
-        do: Kvern.nuke_storage(unquote(name))
+      def nuke_storage(), do: Kvern.nuke_storage(unquote(name))
 
-      def shutdown(),
-        do: Kvern.shutdown(unquote(name))
+      def shutdown(), do: Kvern.shutdown(unquote(name))
     end
   end
-
 end

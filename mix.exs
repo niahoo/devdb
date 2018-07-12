@@ -2,19 +2,20 @@ defmodule Kvern.Mixfile do
   use Mix.Project
 
   def project do
-    [app: :kvern,
-     description: """
-     This package implements a simple key/value store backed by human readable
-     disk files.
-     """,
-     version: "0.1.0",
-     elixir: "~> 1.4",
-     build_embedded: Mix.env == :prod,
-     start_permanent: Mix.env == :prod,
-     deps: deps(),
-     name: "Kvern",
-     package: package(),
-   ]
+    [
+      app: :kvern,
+      description: """
+      This package implements a simple key/value store backed by human readable
+      disk files.
+      """,
+      version: "0.1.0",
+      elixir: "~> 1.4",
+      build_embedded: Mix.env() == :prod,
+      start_permanent: Mix.env() == :prod,
+      deps: deps(),
+      name: "Kvern",
+      package: package()
+    ]
   end
 
   # Configuration for the OTP application
@@ -22,8 +23,7 @@ defmodule Kvern.Mixfile do
   # Type "mix help compile.app" for more information
   def application do
     # Specify extra applications you'll use from Erlang/Elixir
-    [extra_applications: [:logger],
-     mod: {Kvern.Application, []}]
+    [extra_applications: [:logger], mod: {Kvern.Application, []}]
   end
 
   # Dependencies can be Hex packages:
@@ -44,9 +44,10 @@ defmodule Kvern.Mixfile do
 
       # runtime
       # {:xdn, path: "../xdn"},
-      {:plain_fsm, github: "uwiger/plain_fsm", override: true},
-      {:plain_fsm_ex, github: "ashneyderman/plain_fsm_ex", branch: "master"},
       {:shorter_maps, "~> 2.1"},
+      {:unsafe, "~> 1.0"},
+      {:gen_loop, "~> 0.1.0"},
+      {:plain_fsm, github: "uwiger/plain_fsm", commit: "ae9eca8a8df8f61a32185b06882a55d60e62e904"}
     ]
   end
 
@@ -54,7 +55,7 @@ defmodule Kvern.Mixfile do
     [
       licenses: ["MIT"],
       maintainers: ["niahoo osef <dev@ooha.in>"],
-      links: %{"Github" => "https://github.com/niahoo/kvern"},
+      links: %{"Github" => "https://github.com/niahoo/kvern"}
     ]
   end
 end

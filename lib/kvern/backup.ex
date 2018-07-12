@@ -10,30 +10,37 @@ defmodule Kvern.Backup do
     ~M(codec, codec_encode_opts) = config
     filename = key_to_filename(key, codec.extension)
     fullpath = Path.join(dir, filename)
+
     with :ok <- copy_backup_file_if_exists(fullpath),
          {:ok, encoded} <- codec.encode(value, codec_encode_opts),
-         :ok <- write_data(fullpath, encoded)
-      do
-        {:ok, key}
-      else
-        {:error, err} -> {:error, {err, key}}
+         :ok <- write_data(fullpath, encoded) do
+      {:ok, key}
+    else
+      {:error, err} -> {:error, {err, key}}
     end
   end
 
-  def key_to_filename(key, ext), do: "#{key}.#{ext}" # keys must be binaries !
+  # keys must be binaries !
+  def key_to_filename(key, ext), do: "#{key}.#{ext}"
 
   def copy_backup_file_if_exists(path) do
     case File.exists?(path) do
-      false -> :ok
+      false ->
+        :ok
+
       true ->
-        backup_path = path
+        backup_path =
+          path
           |> String.split(".")
-          |> :lists.reverse
+          |> :lists.reverse()
           |> List.insert_at(0, "bak")
-          |> :lists.reverse
+          |> :lists.reverse()
           |> Enum.join(".")
+
         case File.rename(path, backup_path) do
-          :ok -> :ok
+          :ok ->
+            :ok
+
           {:error, _} = err ->
             {:error, {:cannot_backup, path, err}}
         end
@@ -44,6 +51,7 @@ defmodule Kvern.Backup do
     case File.write(path, content) do
       :ok ->
         :ok
+
       {:error, _} = err ->
         {:error, {:could_not_write_file, path, content, err}}
     end
@@ -52,9 +60,11 @@ defmodule Kvern.Backup do
   def delete_file(dir, key, ~M(codec)) do
     filename = key_to_filename(key, codec.extension)
     fullpath = Path.join(dir, filename)
+
     case File.rm(fullpath) do
       :ok ->
         {:ok, key}
+
       {:error, posix} = err ->
         {:error, {{:could_not_delete_file, fullpath, posix}, key}}
     end
@@ -65,35 +75,40 @@ defmodule Kvern.Backup do
     extension = codec.extension
     # try do
     {:ok, glob} = Regex.compile(".*\\.#{extension}$")
-    data = dir
-      |> File.ls!
+
+    data =
+      dir
+      |> File.ls!()
       |> Enum.filter(fn f ->
-          remove_extension(f, extension)
-          Regex.match?(glob, f) and Kvern.valid_key?(f)
-        end)
+        remove_extension(f, extension)
+        Regex.match?(glob, f) and Kvern.valid_key?(f)
+      end)
       |> Enum.map(fn f ->
-          path = Path.join(dir, f)
-          bin = File.read!(path)
-          key = remove_extension(f, extension)
-          case codec.decode(bin, codec_decode_opts) do
-            {:ok, data} -> {key, data}
-            other -> {:error, :bad_data, key, other}
-          end
-         end)
+        path = Path.join(dir, f)
+        bin = File.read!(path)
+        key = remove_extension(f, extension)
+
+        case codec.decode(bin, codec_decode_opts) do
+          {:ok, data} -> {key, data}
+          other -> {:error, :bad_data, key, other}
+        end
+      end)
       |> Enum.into(%{})
+
     {:ok, data}
     # rescue
-      # e -> {:error, e}
+    # e -> {:error, e}
     # end
   end
 
   @todo "Should we fail if extension not found ?"
   def remove_extension(filename, ext) do
-    extlen = String.length(ext) + 1 # handle the dot
+    # handle the dot
+    extlen = String.length(ext) + 1
+
     case String.split_at(filename, -extlen) do
       {cleaned, "." <> ^ext} -> cleaned
       other -> other
     end
   end
-
 end
