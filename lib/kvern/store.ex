@@ -2,7 +2,6 @@ defmodule Kvern.Store do
   require Logger
   import ShorterMaps
   use GenLoop, enter: :main_loop
-  alias Kvern.Backup
   alias Kvern.Repo
 
   defmodule S do
@@ -10,8 +9,10 @@ defmodule Kvern.Store do
               config: nil,
               transaction_owner: nil,
               transaction_monitor: nil,
+              # copy of the default repo during transactions
               backup: nil,
-              storage: nil,
+              # default repository, and transactional repository during transactions
+              repo: nil,
               tainted: [],
               deleted: []
   end
@@ -37,7 +38,6 @@ defmodule Kvern.Store do
       Keyword.take(opts, [:name])
       |> Keyword.update(:name, nil, fn name -> via(name) end)
 
-    IO.puts("gen_opts #{inspect(gen_opts)}")
     GenLoop.start_link(__MODULE__, opts, gen_opts)
   end
 
@@ -79,10 +79,10 @@ defmodule Kvern.Store do
     state = %S{
       config: opts,
       name: name,
-      storage: Repo.new(Kvern.Repo.Ets)
+      repo: Repo.new(Kvern.Repo.Ets)
     }
 
-    IO.puts("@todo seed storage with provided seeders")
+    IO.puts("@todo seed repo with provided seeders")
 
     {:ok, state}
   end
@@ -110,12 +110,8 @@ defmodule Kvern.Store do
       when transaction_owner in [nil, from_pid(from)] ->
         case handle_command(state, command) do
           {:continue, reply, new_state} ->
-            state =
-              new_state
-              |> maybe_save_dirty(command)
-
             reply(from, reply)
-            main_loop(state)
+            main_loop(new_state)
 
           {:rollback, reply} ->
             reply(from, reply)
@@ -139,7 +135,6 @@ defmodule Kvern.Store do
           state
           |> transact_commit()
           |> uwok!
-          |> save_to_disk()
 
         reply(from, @confirm)
         main_loop(state)
@@ -158,9 +153,9 @@ defmodule Kvern.Store do
         # ---------------------------- NO LOOP ---------------------
         :ok
 
-      rcall(from, :nuke_storage)
+      rcall(from, :nuke)
       when transaction_owner === nil ->
-        reply(from, nuke_storage(state))
+        reply(from, nuke(state))
         main_loop(state)
 
       rcast(:print_dump) ->
@@ -169,6 +164,10 @@ defmodule Kvern.Store do
 
       rcall(from, :get_state) ->
         reply(from, state)
+        main_loop(state)
+
+      rcall(from, :tainted) ->
+        reply(from, state.tainted)
         main_loop(state)
 
       rcall(from, other)
@@ -191,45 +190,59 @@ defmodule Kvern.Store do
   end
 
   defp print_dump(state) do
-    ~M(name, storage) = state
-    IO.puts("Dump store #{name} : #{inspect(storage)}")
+    ~M(name, repo) = state
+    IO.puts("Dump store #{name} : #{inspect(repo)}")
   end
 
   defp transact_begin(state, client_pid) do
     # we will keep the current data in a safe place, and store the monitor ref
     # for the client to listen to DOWN messages.
     mref = Process.monitor(client_pid)
-    ~M(storage) = state
+    ~M(repo) = state
+
+    transactional_repo = Repo.new(Kvern.Repo.Transactional, read_fallback: repo)
 
     state =
       state
       |> Map.put(:transaction_owner, client_pid)
       |> Map.put(:transaction_monitor, mref)
-      |> Map.put(:backup, storage)
+      |> Map.put(:backup, repo)
+      |> Map.put(:repo, transactional_repo)
 
     {:ok, state}
   end
 
   defp transact_rollback(%{transaction_owner: nil} = state) do
     # Not in transaction, cannot rollback
+    raise "@todo does this even happen ?"
     {:ok, state}
   end
 
   defp transact_rollback(state) do
-    # set the old storage back in storage
-    backup = state.backup
-    transact_cleanup(state, backup)
+    # set the old repo back in state.repo
+    transact_cleanup(state, state.backup)
   end
 
   defp transact_commit(state) do
-    # confirm that the current storage is the good one
-    ~M(storage) = state
-    transact_cleanup(state, storage)
+    # set the old repo back in state.repo
+    updates = tainted_to_updates(state)
+    IO.puts("updates #{inspect(updates)}")
+    IO.puts("updates #{:io_lib.format('~p~n', [updates])}")
+    repo = Repo.apply_updates(state.backup, updates)
+    transact_cleanup(state, repo)
   end
 
-  defp transact_cleanup(state, storage) do
-    # put back the untainted storage in the state, forget all
-    # modifications since the begining of the transaction
+  defp tainted_to_updates(state) do
+    %{tainted: tainted, deleted: deleted, repo: repo} = state
+    tainted_updates = Enum.map(tainted, fn key -> {:put, key, Repo.fetch!(repo, key)} end)
+    deleted_updates = Enum.map(deleted, fn key -> {:delete, key} end)
+    tainted_updates ++ deleted_updates
+  end
+
+  defp transact_cleanup(state, repo) do
+    # put the provided repo in the state
+    # demonitor transaction client
+    # set transaction informations to nil
     Process.demonitor(state.transaction_monitor, [:flush])
 
     state = %S{
@@ -237,7 +250,9 @@ defmodule Kvern.Store do
       | transaction_owner: nil,
         transaction_monitor: nil,
         backup: nil,
-        storage: storage
+        repo: repo,
+        tainted: [],
+        deleted: []
     }
 
     {:ok, state}
@@ -253,8 +268,8 @@ defmodule Kvern.Store do
         reply = {:error, {:command_exception, command, e}}
         {:rollback, reply}
     else
-      {:ok, reply, new_state} ->
-        {:continue, reply, new_state}
+      # {:ok, reply, new_state} ->
+      # {:continue, reply, new_state}
 
       {:ok, new_state} ->
         {:continue, @confirm, new_state}
@@ -275,49 +290,68 @@ defmodule Kvern.Store do
 
   defp run_command(state, {:kv_put, key, value}) do
     state
-    |> Map.update!(:storage, &Repo.put(&1, key, value))
+    |> Map.update!(:repo, &Repo.put(&1, key, value))
     |> mark_tainted(key)
+    |> unmark_deleted(key)
     |> wok()
   end
 
   defp run_command(state, {:kv_delete, key}) do
     state
-    |> Map.update!(:storage, &Repo.delete(&1, key))
+    |> Map.update!(:repo, &Repo.delete(&1, key))
     |> mark_deleted(key)
+    |> unmark_tainted(key)
     |> wok()
   end
 
   defp run_command(state, {:kv_read, read_fun, args}) do
-    {:reply, apply(Repo, read_fun, [state.storage | args])}
+    {:reply, apply(Repo, read_fun, [state.repo | args])}
   end
 
   defp run_command(state, command) do
     raise "Unknown command #{inspect(command)}"
   end
 
+  defp mark_tainted(%{transaction_owner: nil} = state, key), do: state
+
   defp mark_tainted(state, key) do
     Map.update!(state, :tainted, fn list -> [key | list] end)
   end
+
+  defp mark_deleted(%{transaction_owner: nil} = state, key), do: state
 
   defp mark_deleted(state, key) do
     Map.update!(state, :deleted, fn list -> [key | list] end)
   end
 
-  defp storage_tainted?(%{tainted: [], deleted: []}), do: false
-  defp storage_tainted?(_), do: true
+  defp unmark_deleted([], _), do: []
+  defp unmark_deleted([key | keys], key), do: unmark_deleted(keys, key)
+  defp unmark_deleted([other | keys], key), do: [other | unmark_deleted(keys, key)]
 
-  defp maybe_save_dirty(state, command) do
-    # IO.puts("@todo maybe_save_dirty #{inspect(command)}")
-    state
+  defp unmark_deleted(%{deleted: deleted} = state, key) do
+    deleted = unmark_deleted(deleted, key)
+    Map.put(state, :deleted, deleted)
   end
+
+  defp unmark_tainted([], _), do: []
+  defp unmark_tainted([key | keys], key), do: unmark_tainted(keys, key)
+  defp unmark_tainted([other | keys], key), do: [other | unmark_tainted(keys, key)]
+
+  defp unmark_tainted(%{tainted: tainted} = state, key) do
+    tainted = unmark_tainted(tainted, key)
+    Map.put(state, :tainted, tainted)
+  end
+
+  defp repo_tainted?(%{tainted: [], deleted: []}), do: false
+  defp repo_tainted?(_), do: true
 
   defp save_to_disk(state) do
     # IO.puts("@todo save_to_disk")
     state
   end
 
-  defp nuke_storage(state) do
-    # IO.puts("@todo nuke_storage")
+  defp nuke(state) do
+    # IO.puts("@todo nuke")
     state
   end
 end

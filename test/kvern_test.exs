@@ -76,16 +76,42 @@ defmodule KvernTest do
     assert :error = Kvern.fetch(@store, key)
   end
 
-  @tag :skip
-  test "simple transaction" do
+  test "simple transaction rollback" do
     key = "tkey"
     val = %{xyz: "This is some value"}
+    new_val = "__some_other_value__"
     assert :ok === Kvern.put!(@store, key, val)
+    assert Kvern.tainted(@store) === []
+    # BEGIN
     assert :ok === Kvern.begin(@store)
-    assert :ok === Kvern.put!(@store, key, "__some_other_value__")
-    assert "__some_other_value__" === Kvern.get(@store, key)
+    # before put, the store has access to all the data existing before the
+    # transaction
+    # assert val === Kvern.get(@store, key)
+    assert :ok === Kvern.put!(@store, key, new_val)
+    assert Kvern.tainted(@store) === [key]
+    # before rolling back, assert that the new value is readable
+    assert new_val === Kvern.get(@store, key)
+    # ROLLBACK
     assert :ok === Kvern.rollback(@store)
+    assert Kvern.tainted(@store) === []
     assert val === Kvern.get(@store, key)
+  end
+
+  test "simple transaction commit" do
+    key = "tkey"
+    val = %{xyz: "This is some value"}
+    new_val = "__some_other_value__"
+    assert :ok === Kvern.put!(@store, key, val)
+    assert Kvern.tainted(@store) === []
+    # BEGIN
+    assert :ok === Kvern.begin(@store)
+    assert :ok === Kvern.put!(@store, key, new_val)
+    assert Kvern.tainted(@store) === [key]
+    assert new_val === Kvern.get(@store, key)
+    # COMMIT
+    assert :ok === Kvern.commit(@store)
+    assert Kvern.tainted(@store) === []
+    assert new_val === Kvern.get(@store, key)
   end
 
   @tag :skip

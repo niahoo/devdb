@@ -75,21 +75,25 @@ defmodule Kvern do
   end
 
   def print_dump(db) do
-    GenServer.cast(Store.via(db), :print_dump)
+    GenLoop.cast(Store.via(db), :print_dump)
+  end
+
+  def tainted(db) do
+    GenLoop.call(Store.via(db), :tainted)
   end
 
   def nuke_storage(db) do
-    GenServer.call(Store.via(db), :nuke_storage)
+    GenLoop.call(Store.via(db), :nuke_storage)
   end
 
   def shutdown(db) do
-    GenServer.call(Store.via(db), :shutdown)
+    GenLoop.call(Store.via(db), :shutdown)
   end
 
   def unwrap_put(:ok), do: :ok
   def unwrap_put({:error, reason}), do: raise("could not put #{inspect(reason)}")
 
-  def unwrap_fetch({:ok, val}), do: val
+  def unwrap_fetch({:ok, val}, _, _), do: val
   def unwrap_fetch(:error, db, key), do: raise(KeyError, key: key, term: {__MODULE__, db})
 
   # Defines a simple macro that hardcode the store name in the calls to the API
@@ -114,6 +118,8 @@ defmodule Kvern do
       def keys(), do: Kvern.keys(unquote(name))
 
       def print_dump(), do: Kvern.print_dump(unquote(name))
+
+      def tainted(), do: Kvern.tainted(unquote(name))
 
       def nuke_storage(), do: Kvern.nuke_storage(unquote(name))
 

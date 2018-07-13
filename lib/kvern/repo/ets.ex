@@ -3,7 +3,7 @@ defmodule Kvern.Repo.Ets do
 
   defstruct [:tab]
 
-  def initialize do
+  def new() do
     tab = Ets.new(__MODULE__, [:set, :private])
     tab
   end
