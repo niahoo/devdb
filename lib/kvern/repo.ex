@@ -17,8 +17,23 @@ defmodule Kvern.Repo do
     %{repo | state: mod.delete(state, key)}
   end
 
-  def fetch(%@m{mod: mod, state: state}, key) do
-    mod.fetch(state, key)
+  def nuke(repo = %@m{mod: mod, state: state}) do
+    %{repo | state: mod.nuke(state)}
+  end
+
+  def fetch(%@m{mod: mod, state: state, read_fallback: read_fallback}, key) do
+    case {mod.fetch(state, key), read_fallback} do
+      {{:ok, found}, _} ->
+        {:ok, found}
+
+      # no fallback to get the data
+      {:error, nil} ->
+        :error
+
+      {:error, %@m{} = fallback} ->
+        IO.puts("Using fallback to fetch #{key}")
+        fetch(fallback, key)
+    end
   end
 
   def fetch!(%@m{mod: mod, state: state}, key) do

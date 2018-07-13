@@ -33,9 +33,6 @@ defmodule KvernTest do
     recup = Kvern.get(@store, key)
     assert is_pid(Kvern.whereis(@store))
 
-    Kvern.Store.get_state(@store)
-    |> IO.inspect()
-
     assert recup === val
   end
 
@@ -86,7 +83,7 @@ defmodule KvernTest do
     assert :ok === Kvern.begin(@store)
     # before put, the store has access to all the data existing before the
     # transaction
-    # assert val === Kvern.get(@store, key)
+    assert val === Kvern.get(@store, key)
     assert :ok === Kvern.put!(@store, key, new_val)
     assert Kvern.tainted(@store) === [key]
     # before rolling back, assert that the new value is readable
@@ -114,17 +111,14 @@ defmodule KvernTest do
     assert new_val === Kvern.get(@store, key)
   end
 
-  @tag :skip
   test "call by pid" do
     [{pid, _}] = Registry.lookup(Kvern.Registry, @store)
     assert is_pid(pid)
     assert :ok === Kvern.put(pid, "ignore", :ignore)
   end
 
-  @tag :skip
-  @tag :skip
   test "restore" do
-    :ok = Kvern.nuke_storage(@store)
+    :ok = Kvern.nuke(@store)
     :ok = Kvern.put(@store, "my-key-1", :my_value_1)
     :ok = Kvern.put(@store, "my-key-2", :my_value_2)
     Kvern.shutdown(@store)

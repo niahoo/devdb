@@ -10,8 +10,7 @@ defmodule Kvern.Repo.Transactional do
   end
 
   def delete(this, key) do
-    this
-    |> Map.update(:data, fn data -> Map.delete(data, key) end)
+    Map.put(this, :data, Map.delete(this.data, key))
   end
 
   def fetch(this, key) do

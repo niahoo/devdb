@@ -153,10 +153,17 @@ defmodule Kvern.Store do
         # ---------------------------- NO LOOP ---------------------
         :ok
 
-      rcall(from, :nuke)
-      when transaction_owner === nil ->
-        reply(from, nuke(state))
-        main_loop(state)
+      rcall(from, :nuke) ->
+        case transaction_owner do
+          nil ->
+            new_state = state |> nuke |> uwok!
+            reply(from, :ok)
+            main_loop(new_state)
+
+          other ->
+            reply(from, {:error, :in_transaction})
+            main_loop(state)
+        end
 
       rcast(:print_dump) ->
         print_dump(state)
@@ -226,8 +233,6 @@ defmodule Kvern.Store do
   defp transact_commit(state) do
     # set the old repo back in state.repo
     updates = tainted_to_updates(state)
-    IO.puts("updates #{inspect(updates)}")
-    IO.puts("updates #{:io_lib.format('~p~n', [updates])}")
     repo = Repo.apply_updates(state.backup, updates)
     transact_cleanup(state, repo)
   end
@@ -290,7 +295,7 @@ defmodule Kvern.Store do
 
   defp run_command(state, {:kv_put, key, value}) do
     state
-    |> Map.update!(:repo, &Repo.put(&1, key, value))
+    |> Map.put(:repo, Repo.put(state.repo, key, value))
     |> mark_tainted(key)
     |> unmark_deleted(key)
     |> wok()
@@ -298,7 +303,7 @@ defmodule Kvern.Store do
 
   defp run_command(state, {:kv_delete, key}) do
     state
-    |> Map.update!(:repo, &Repo.delete(&1, key))
+    |> Map.put(:repo, Repo.delete(state.repo, key))
     |> mark_deleted(key)
     |> unmark_tainted(key)
     |> wok()
@@ -351,7 +356,8 @@ defmodule Kvern.Store do
   end
 
   defp nuke(state) do
-    # IO.puts("@todo nuke")
     state
+    |> Map.put(:repo, Repo.nuke(state.repo))
+    |> wok()
   end
 end

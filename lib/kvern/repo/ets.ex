@@ -30,6 +30,11 @@ defmodule Kvern.Repo.Ets do
     tab
   end
 
+  def nuke(tab) do
+    true = Ets.delete(tab)
+    __MODULE__.new()
+  end
+
   def keys(tab) do
     first = Ets.first(tab)
     keys(tab, first, [first])

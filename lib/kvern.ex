@@ -82,8 +82,8 @@ defmodule Kvern do
     GenLoop.call(Store.via(db), :tainted)
   end
 
-  def nuke_storage(db) do
-    GenLoop.call(Store.via(db), :nuke_storage)
+  def nuke(db) do
+    GenLoop.call(Store.via(db), :nuke)
   end
 
   def shutdown(db) do
@@ -121,7 +121,7 @@ defmodule Kvern do
 
       def tainted(), do: Kvern.tainted(unquote(name))
 
-      def nuke_storage(), do: Kvern.nuke_storage(unquote(name))
+      def nuke(), do: Kvern.nuke(unquote(name))
 
       def shutdown(), do: Kvern.shutdown(unquote(name))
     end
