@@ -1,10 +1,13 @@
 defmodule Kvern do
   alias Kvern.Store
+  use TODO
   import Store, only: [send_command: 2]
   use Unsafe.Generator, docs: false
   defdelegate begin(db), to: Store
   defdelegate commit(db), to: Store
   defdelegate rollback(db), to: Store
+
+  @type t_update :: {:put, key :: any(), value :: any()} | {:delete, key :: any()}
 
   @unsafe [
     {
@@ -29,25 +32,24 @@ defmodule Kvern do
       |> Keyword.put(:name, name)
       |> setup_disk_copy()
 
-    {:ok, pid} = Supervisor.start_child(Kvern.StoreSupervisor, [opts])
-    Kvern.seed(pid)
+    Supervisor.start_child(Kvern.StoreSupervisor, [opts])
   end
 
   def setup_disk_copy(opts) do
-    opts =
-      if opts[:disk_copy] do
-        disk_copy_dir = opts[:disk_copy]
+    if opts[:disk_copy] do
+      disk_copy_dir = opts[:disk_copy]
 
-        seed = Kvern.Seed.Disk.new(disk_copy_dir)
-        replicate = Kvern.Repo.Disk.new(disk_copy_dir)
+      # We use a disk repo as a seed
+      seed = Kvern.Seed.new(Kvern.Repo.Disk, dir: disk_copy_dir)
+      replicate = {Kvern.Repo.Disk, dir: disk_copy_dir}
 
-        opts
-        |> Keyword.update(:seeds, [seed], fn seeds -> seeds ++ [seed] end)
-        |> Keyword.update(:replicates, [replicate], fn replicates -> replicates ++ [replicate] end)
-        |> Keyword.delete(:disk_copy)
-      else
-        opts
-      end
+      opts
+      |> Keyword.update(:seeds, [seed], fn seeds -> seeds ++ [seed] end)
+      |> Keyword.update(:replicates, [replicate], fn replicates -> replicates ++ [replicate] end)
+      |> Keyword.delete(:disk_copy)
+    else
+      opts
+    end
   end
 
   def whereis(name), do: Store.whereis(name)
@@ -61,24 +63,11 @@ defmodule Kvern do
   end
 
   def get_lazy(db, key, fun) do
-    begin(db)
-    # fun must be executed in the calling process
-    case get(db, key, {:not_found, key}) do
-      {:not_found, ^key} ->
-        try do
-          val = fun.()
-          put!(db, key, val)
-          commit(db)
-          val
-        rescue
-          e ->
-            stacktrace = System.stacktrace()
-            rollback(db)
-            reraise(e, stacktrace)
-        end
-
-      val ->
-        val
+    # fun is executed in the calling process. As we may or not be in a
+    # transaction, we cannot automatically put the value in the store
+    case fetch(db, key) do
+      :error -> fun.()
+      {:ok, val} -> val
     end
   end
 
@@ -131,7 +120,7 @@ defmodule Kvern do
 
       def get(key, default \\ nil), do: Kvern.get(unquote(name), key, default)
 
-      def get_lazy(key, fun), do: Kvern.get(unquote(name), key, fun)
+      def get_lazy(key, fun), do: Kvern.get_lazy(unquote(name), key, fun)
 
       def fetch(key), do: Kvern.fetch(unquote(name), key)
 

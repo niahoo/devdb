@@ -14,7 +14,8 @@ defmodule Kvern.Mixfile do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       name: "Kvern",
-      package: package()
+      package: package(),
+      elixirc_options: elixirc_options(Mix.env())
     ]
   end
 
@@ -46,6 +47,7 @@ defmodule Kvern.Mixfile do
       # {:xdn, path: "../xdn"},
       {:shorter_maps, "~> 2.1"},
       {:unsafe, "~> 1.0"},
+      # {:credo, "~> 0.9.1", only: [:dev, :test], runtime: false},
       {:gen_loop, "~> 0.1.0"},
       {:plain_fsm, github: "uwiger/plain_fsm", commit: "ae9eca8a8df8f61a32185b06882a55d60e62e904"}
     ]
@@ -58,4 +60,8 @@ defmodule Kvern.Mixfile do
       links: %{"Github" => "https://github.com/niahoo/kvern"}
     ]
   end
+
+  defp elixirc_options(:dev), do: [warnings_as_errors: true]
+  defp elixirc_options(:test), do: [warnings_as_errors: true]
+  defp elixirc_options(_), do: nil
 end

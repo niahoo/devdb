@@ -1,12 +1,19 @@
 defmodule Kvern.Repo do
-  alias Kvern.Repo.Ets
+  @type repo_state :: any()
+
+  @callback new(opts :: [any()]) :: any()
+  @callback delete(repo_state(), key :: any()) :: repo_state()
+  @callback fetch(repo_state(), key :: any()) :: {:ok, any()} | {:error, any()}
+  @callback keys(repo_state()) :: [any()]
+  @callback nuke(repo_state()) :: repo_state()
+  @callback put(repo_state(), key :: any(), value :: any()) :: repo_state()
 
   @m __MODULE__
 
   defstruct mod: nil, state: nil, read_fallback: nil
 
   def new(mod, opts \\ []) do
-    %@m{mod: mod, state: mod.new(), read_fallback: opts[:read_fallback]}
+    %@m{mod: mod, state: mod.new(opts), read_fallback: opts[:read_fallback]}
   end
 
   def put(repo = %@m{mod: mod, state: state}, key, value) do

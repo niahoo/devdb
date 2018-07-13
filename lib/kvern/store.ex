@@ -6,7 +6,6 @@ defmodule Kvern.Store do
 
   defmodule S do
     defstruct name: nil,
-              config: nil,
               transaction_owner: nil,
               transaction_monitor: nil,
               # copy of the default repo during transactions
@@ -73,17 +72,21 @@ defmodule Kvern.Store do
   # -- Database initialization ------------------------------------------------
 
   def init(opts) do
-    name = Keyword.get(opts, :name)
+    repo =
+      case opts[:replicates] do
+        list when is_list(list) and length(list) > 0 ->
+          Repo.new(Repo.Multi, [Repo.Ets | opts[:replicates]])
+
+        _otherwise ->
+          Repo.new(Repo.Ets)
+      end
 
     state = %S{
-      config: opts,
-      name: name,
-      repo: Repo.new(Kvern.Repo.Ets)
+      name: opts[:name],
+      repo: repo
     }
 
-    IO.puts("Initializing store #{inspect(state, pretty: true)}")
-    IO.puts("@todo seed repo with provided seeders")
-
+    state = Enum.reduce(opts[:seeds], state, &apply_seed/2)
     {:ok, state}
   end
 
@@ -160,7 +163,7 @@ defmodule Kvern.Store do
             reply(from, :ok)
             main_loop(new_state)
 
-          other ->
+          _other ->
             reply(from, {:error, :in_transaction})
             main_loop(state)
         end
@@ -175,6 +178,10 @@ defmodule Kvern.Store do
 
       rcall(from, :tainted) ->
         reply(from, state.tainted)
+        main_loop(state)
+
+      rcall(from, :tainted?) ->
+        reply(from, repo_tainted?(state))
         main_loop(state)
 
       rcall(from, other)
@@ -196,9 +203,9 @@ defmodule Kvern.Store do
     end
   end
 
-  defp print_dump(state) do
-    ~M(name, repo) = state
-    IO.puts("Dump store #{name} : #{inspect(repo)}")
+  defp print_dump(_state) do
+    # ~M(name, repo) = state
+    # IO.puts("Dump store #{name} : #{inspect(repo)}")
   end
 
   defp transact_begin(state, client_pid) do
@@ -207,7 +214,7 @@ defmodule Kvern.Store do
     mref = Process.monitor(client_pid)
     ~M(repo) = state
 
-    transactional_repo = Repo.new(Kvern.Repo.Transactional, read_fallback: repo)
+    transactional_repo = Repo.new(Repo.Transactional, read_fallback: repo)
 
     state =
       state
@@ -313,17 +320,17 @@ defmodule Kvern.Store do
     {:reply, apply(Repo, read_fun, [state.repo | args])}
   end
 
-  defp run_command(state, command) do
+  defp run_command(_state, command) do
     raise "Unknown command #{inspect(command)}"
   end
 
-  defp mark_tainted(%{transaction_owner: nil} = state, key), do: state
+  defp mark_tainted(state = %{transaction_owner: nil}, _key), do: state
 
   defp mark_tainted(state, key) do
     Map.update!(state, :tainted, fn list -> [key | list] end)
   end
 
-  defp mark_deleted(%{transaction_owner: nil} = state, key), do: state
+  defp mark_deleted(state = %{transaction_owner: nil}, _key), do: state
 
   defp mark_deleted(state, key) do
     Map.update!(state, :deleted, fn list -> [key | list] end)
@@ -350,14 +357,18 @@ defmodule Kvern.Store do
   defp repo_tainted?(%{tainted: [], deleted: []}), do: false
   defp repo_tainted?(_), do: true
 
-  defp save_to_disk(state) do
-    # IO.puts("@todo save_to_disk")
-    state
-  end
-
   defp nuke(state) do
     state
     |> Map.put(:repo, Repo.nuke(state.repo))
     |> wok()
+  end
+
+  defp apply_seed(seed, state) do
+    # We require the seed to provide a stream but at the moment we just turn
+    # this into an enum.
+    updates = Kvern.Seed.stream_updates(seed)
+    updates = Enum.to_list(updates)
+    repo = Repo.apply_updates(state.repo, updates)
+    %S{state | repo: repo}
   end
 end

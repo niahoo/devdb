@@ -6,17 +6,17 @@ defmodule KvernTest do
 
   @dir_1 File.cwd!() |> Path.join("test/stores/d1")
 
-  @dir_2 File.cwd!() |> Path.join("test/stores/d2")
-
   def reset_dir(dir) do
+    IO.puts("Remove directory #{dir}")
     File.rm_rf!(dir)
+    IO.puts("Create directory #{dir}")
     File.mkdir_p!(dir)
+    Process.sleep(500)
   end
 
   setup_all do
     # setup Kvern
     reset_dir(@dir_1)
-    # reset_dir(@dir_2)
     Application.ensure_started(:kvern)
     launch_store()
     :ok
@@ -44,7 +44,8 @@ defmodule KvernTest do
     assert :ok === Kvern.delete(@store, key)
     assert :error === Kvern.fetch(@store, key)
     assert :generated = Kvern.get_lazy(@store, key, fn -> :generated end)
-    assert {:ok, :generated} === Kvern.fetch(@store, key)
+    # Unfortunately, values are not automatically set on the store with get_lazy
+    assert :error === Kvern.fetch(@store, key)
   end
 
   test "keys and delete" do

@@ -1,9 +1,13 @@
 defmodule Kvern.Repo.Ets do
   alias :ets, as: Ets
+  use TODO
+
+  @behaviour Kvern.Repo
 
   defstruct [:tab]
 
-  def new() do
+  @todo "Allow ETS configuration or even provide the table"
+  def new(_opts) do
     tab = Ets.new(__MODULE__, [:set, :private])
     tab
   end
@@ -30,9 +34,13 @@ defmodule Kvern.Repo.Ets do
     tab
   end
 
+  @todo """
+  We must keep not only the tab but also the options in a state in order to
+  create a new table
+  """
   def nuke(tab) do
     true = Ets.delete(tab)
-    __MODULE__.new()
+    __MODULE__.new([])
   end
 
   def keys(tab) do
