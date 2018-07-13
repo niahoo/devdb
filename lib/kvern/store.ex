@@ -74,7 +74,6 @@ defmodule Kvern.Store do
 
   def init(opts) do
     name = Keyword.get(opts, :name)
-    IO.puts("Initializing store #{inspect(name)}")
 
     state = %S{
       config: opts,
@@ -82,6 +81,7 @@ defmodule Kvern.Store do
       repo: Repo.new(Kvern.Repo.Ets)
     }
 
+    IO.puts("Initializing store #{inspect(state, pretty: true)}")
     IO.puts("@todo seed repo with provided seeders")
 
     {:ok, state}

@@ -21,6 +21,8 @@ defmodule Kvern.Repo do
     %{repo | state: mod.nuke(state)}
   end
 
+  # Here if we use the fallback, as we do not return the repository from
+  # fetch(), we cannot put the fallback value in the repo.
   def fetch(%@m{mod: mod, state: state, read_fallback: read_fallback}, key) do
     case {mod.fetch(state, key), read_fallback} do
       {{:ok, found}, _} ->
@@ -31,7 +33,6 @@ defmodule Kvern.Repo do
         :error
 
       {:error, %@m{} = fallback} ->
-        IO.puts("Using fallback to fetch #{key}")
         fetch(fallback, key)
     end
   end

@@ -8,19 +8,22 @@ defmodule KvernTest do
 
   @dir_2 File.cwd!() |> Path.join("test/stores/d2")
 
+  def reset_dir(dir) do
+    File.rm_rf!(dir)
+    File.mkdir_p!(dir)
+  end
+
   setup_all do
     # setup Kvern
-    File.rm_rf!(@dir_1)
-    File.mkdir_p!(@dir_1)
-    File.rm_rf!(@dir_2)
-    File.mkdir_p!(@dir_2)
+    reset_dir(@dir_1)
+    # reset_dir(@dir_2)
     Application.ensure_started(:kvern)
     launch_store()
     :ok
   end
 
   def launch_store() do
-    {:ok, _} = Kvern.open(@store)
+    {:ok, _} = Kvern.open(@store, disk_copy: @dir_1)
   end
 
   test "put / get simple value" do
