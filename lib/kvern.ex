@@ -37,11 +37,12 @@ defmodule Kvern do
 
   def setup_disk_copy(opts) do
     if opts[:disk_copy] do
-      disk_copy_dir = opts[:disk_copy]
+      dir = opts[:disk_copy][:dir]
+      codec = opts[:disk_copy][:codec]
 
       # We use a disk repo as a seed
-      seed = Kvern.Seed.new(Kvern.Repo.Disk, dir: disk_copy_dir)
-      replicate = {Kvern.Repo.Disk, dir: disk_copy_dir}
+      seed = Kvern.Seed.new(Kvern.Repo.Disk, dir: dir, codec: codec)
+      replicate = {Kvern.Repo.Disk, dir: dir, codec: codec}
 
       opts
       |> Keyword.update(:seeds, [seed], fn seeds -> seeds ++ [seed] end)

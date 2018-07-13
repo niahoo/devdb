@@ -8,7 +8,7 @@ defmodule Kvern.Repo.Ets do
 
   @todo "Allow ETS configuration or even provide the table"
   def new(_opts) do
-    tab = Ets.new(__MODULE__, [:set, :private])
+    tab = Ets.new(__MODULE__, [:protected, :set])
     tab
   end
 

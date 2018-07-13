@@ -4,26 +4,24 @@ defmodule KvernTest do
 
   @store __MODULE__
 
-  @dir_1 File.cwd!() |> Path.join("test/stores/d1")
-
-  def reset_dir(dir) do
-    IO.puts("Remove directory #{dir}")
-    File.rm_rf!(dir)
-    IO.puts("Create directory #{dir}")
-    File.mkdir_p!(dir)
-    Process.sleep(500)
-  end
+  @dir_1 File.cwd!() |> Path.join("test/stores/d1-default")
+  @dir_2 File.cwd!() |> Path.join("test/stores/d2-poison")
 
   setup_all do
-    # setup Kvern
-    reset_dir(@dir_1)
+    Kvern.Repo.Disk.reset_dir(@dir_1)
+    Kvern.Repo.Disk.reset_dir(@dir_2)
     Application.ensure_started(:kvern)
     launch_store()
     :ok
   end
 
   def launch_store() do
-    {:ok, _} = Kvern.open(@store, disk_copy: @dir_1)
+    launch_store(@store, @dir_1)
+  end
+
+  def launch_store(store, dir, codec \\ nil) do
+    disk_copy = [dir: dir, codec: codec]
+    {:ok, _} = Kvern.open(store, disk_copy: disk_copy)
   end
 
   test "put / get simple value" do
@@ -41,9 +39,11 @@ defmodule KvernTest do
 
   test "get lazy" do
     key = "my_lazy_key"
+    # the key does not exist yet, but this is a test that we can delete
+    # unexisting keys without error.
     assert :ok === Kvern.delete(@store, key)
     assert :error === Kvern.fetch(@store, key)
-    assert :generated = Kvern.get_lazy(@store, key, fn -> :generated end)
+    assert :generated === Kvern.get_lazy(@store, key, fn -> :generated end)
     # Unfortunately, values are not automatically set on the store with get_lazy
     assert :error === Kvern.fetch(@store, key)
   end
@@ -74,7 +74,7 @@ defmodule KvernTest do
     assert :ok === Kvern.delete(@store, key)
     Kvern.shutdown(@store)
     {:ok, _pid} = launch_store()
-    assert :error = Kvern.fetch(@store, key)
+    assert :error === Kvern.fetch(@store, key)
   end
 
   test "simple transaction rollback" do
@@ -125,8 +125,41 @@ defmodule KvernTest do
     :ok = Kvern.nuke(@store)
     :ok = Kvern.put(@store, "my-key-1", :my_value_1)
     :ok = Kvern.put(@store, "my-key-2", :my_value_2)
+    :ok = Kvern.delete(@store, "my-key-2")
     Kvern.shutdown(@store)
     {:ok, _pid} = launch_store()
-    assert :my_value_1 = Kvern.fetch!(@store, "my-key-1")
+    assert :my_value_1 === Kvern.fetch!(@store, "my-key-1")
+    assert :error === Kvern.fetch(@store, "my-key-2")
+  end
+
+  test "restore json" do
+    # Poison cannot encode atoms as values, so here we will try integers,
+    # strings, maps, lists ... but all those tests are actually Poison's unit
+    # tests
+
+    # @todo Test atoms as keys.
+
+    store = JSON.Store
+    codec = [module: Poison, ext: ".json", encode: [pretty: true]]
+
+    launch_json_store = fn ->
+      launch_store(store, @dir_2, codec)
+    end
+
+    val_1 = [1, 2, "three", %{"figure" => 'four'}]
+    val_2 = %{"a" => "1", "b" => nil, "c" => 1.001}
+    val_3 = "I will be deleted"
+
+    launch_json_store.()
+    :ok = Kvern.nuke(store)
+    :ok = Kvern.put(store, "json-1", val_1)
+    :ok = Kvern.put(store, "json-2", val_2)
+    :ok = Kvern.put(store, "json-3-del", val_3)
+    :ok = Kvern.delete(store, "json-3-del")
+    Kvern.shutdown(store)
+    {:ok, _pid} = launch_json_store.()
+    assert val_1 === Kvern.fetch!(store, "json-1")
+    assert val_2 === Kvern.fetch!(store, "json-2")
+    assert :error === Kvern.fetch(store, "json-3")
   end
 end
