@@ -98,10 +98,6 @@ defmodule Kvern.Store do
 
   # -- Server States ----------------------------------------------------------
 
-  def main_loop(nil) do
-    raise "bad state"
-  end
-
   def main_loop(state) do
     # nil if not in transaction
     ~M(transaction_owner) = state
@@ -203,9 +199,19 @@ defmodule Kvern.Store do
     end
   end
 
-  defp print_dump(_state) do
-    # ~M(name, repo) = state
-    # IO.puts("Dump store #{name} : #{inspect(repo)}")
+  defp print_dump(~M(name, repo)) do
+    dump = "STORE DUMP\nSTORE #{name}\n\n"
+
+    repo
+    |> Repo.keys()
+    |> Enum.reduce(dump, fn key, dump ->
+      value = Repo.fetch!(repo, key)
+      # I have to do this syntax so the formatter do not mess with me
+      dump = dump <> ":  #{key}\n"
+      dump = dump <> "   #{inspect(value, pretty: true)}\n"
+      dump
+    end)
+    |> IO.puts()
   end
 
   defp transact_begin(state, client_pid) do

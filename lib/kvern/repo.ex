@@ -55,7 +55,7 @@ defmodule Kvern.Repo do
     mod.keys(state)
   end
 
-  def get(repo, key, default) do
+  def get(repo, key, default \\ nil) do
     case fetch(repo, key) do
       {:ok, found} ->
         found

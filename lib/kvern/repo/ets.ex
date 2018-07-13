@@ -45,13 +45,13 @@ defmodule Kvern.Repo.Ets do
 
   def keys(tab) do
     first = Ets.first(tab)
-    keys(tab, first, [first])
+    keys(tab, first, [])
   end
 
   def keys(_tab, :"$end_of_table", acc), do: :lists.reverse(acc)
 
   def keys(tab, prev, acc) do
     next = Ets.next(tab, prev)
-    keys(tab, next, [next | acc])
+    keys(tab, next, [prev | acc])
   end
 end

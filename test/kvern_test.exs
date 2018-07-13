@@ -115,6 +115,21 @@ defmodule KvernTest do
     assert new_val === Kvern.get(@store, key)
   end
 
+  @tag :skip
+  test "print a dump" do
+    :ok = Kvern.nuke(@store)
+    :ok = Kvern.put!(@store, "some_int", 1_234_567)
+    :ok = Kvern.put!(@store, "some_float", 1.001002003)
+    :ok = Kvern.put!(@store, "some_string", "I see rain ... ")
+    :ok = Kvern.put!(@store, "some_map", %{:a => 1, %{inc: "eption"} => false})
+    :ok = Kvern.put!(@store, "some_list", [:a, :b, :c])
+    :ok = Kvern.put!(@store, "aaaaa", ~s(this is a small s string))
+    :ok = Kvern.put!(@store, "bbbbb", ~S(big S here))
+    :ok = Kvern.put!(@store, "ccccc", ~w(this is a word list))
+    Kvern.print_dump(@store)
+    Process.sleep(500)
+  end
+
   test "call by pid" do
     [{pid, _}] = Registry.lookup(Kvern.Registry, @store)
     assert is_pid(pid)
