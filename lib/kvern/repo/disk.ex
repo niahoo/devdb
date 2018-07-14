@@ -77,6 +77,7 @@ defmodule Kvern.Repo.Disk do
     ext = state.file_ext
     path = key_to_filename(key, ext, state.dir)
 
+    Logger.debug("Write to disk : #{inspect(key)}")
     File.write!(path, binary, [:raw])
 
     state

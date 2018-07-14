@@ -4,19 +4,19 @@ defmodule KvernTest do
 
   @store __MODULE__
 
-  @dir_1 File.cwd!() |> Path.join("test/stores/d1-default")
-  @dir_2 File.cwd!() |> Path.join("test/stores/d2-poison")
+  @dir_default File.cwd!() |> Path.join("test/stores/d1-default")
+  @dir_poison File.cwd!() |> Path.join("test/stores/d2-poison")
 
   setup_all do
-    Kvern.Repo.Disk.reset_dir(@dir_1)
-    Kvern.Repo.Disk.reset_dir(@dir_2)
+    Kvern.Repo.Disk.reset_dir(@dir_default)
+    Kvern.Repo.Disk.reset_dir(@dir_poison)
     Application.ensure_started(:kvern)
     launch_store()
     :ok
   end
 
   def launch_store() do
-    launch_store(@store, @dir_1)
+    launch_store(@store, @dir_default)
   end
 
   def launch_store(store, dir, codec \\ nil) do
@@ -24,6 +24,7 @@ defmodule KvernTest do
     {:ok, _} = Kvern.open(store, disk_copy: disk_copy)
   end
 
+  @tag :skip
   test "put / get simple value" do
     key = "mykey"
     val = :some_value
@@ -37,6 +38,7 @@ defmodule KvernTest do
     assert recup === val
   end
 
+  @tag :skip
   test "get lazy" do
     key = "my_lazy_key"
     # the key does not exist yet, but this is a test that we can delete
@@ -48,6 +50,7 @@ defmodule KvernTest do
     assert :error === Kvern.fetch(@store, key)
   end
 
+  @tag :skip
   test "keys and delete" do
     keys_before = Kvern.keys(@store)
     assert is_list(keys_before)
@@ -68,6 +71,7 @@ defmodule KvernTest do
     assert Enum.sort(keys_end) === Enum.sort(keys_before)
   end
 
+  @tag :skip
   test "delete / recover" do
     key = "ghost"
     assert :ok === Kvern.put(@store, key, "Tom Joad")
@@ -77,6 +81,7 @@ defmodule KvernTest do
     assert :error === Kvern.fetch(@store, key)
   end
 
+  @tag :skip
   test "simple transaction rollback" do
     key = "tkey"
     val = %{xyz: "This is some value"}
@@ -98,6 +103,7 @@ defmodule KvernTest do
     assert val === Kvern.get(@store, key)
   end
 
+  @tag :skip
   test "simple transaction commit" do
     key = "tkey"
     val = %{xyz: "This is some value"}
@@ -130,6 +136,7 @@ defmodule KvernTest do
     Process.sleep(500)
   end
 
+  @tag :skip
   test "call by pid" do
     [{pid, _}] = Registry.lookup(Kvern.Registry, @store)
     assert is_pid(pid)
@@ -147,6 +154,7 @@ defmodule KvernTest do
     assert :error === Kvern.fetch(@store, "my-key-2")
   end
 
+  @tag :skip
   test "restore json" do
     # Poison cannot encode atoms as values, so here we will try integers,
     # strings, maps, lists ... but all those tests are actually Poison's unit
@@ -158,7 +166,7 @@ defmodule KvernTest do
     codec = [module: Poison, ext: ".json", encode: [pretty: true]]
 
     launch_json_store = fn ->
-      launch_store(store, @dir_2, codec)
+      launch_store(store, @dir_poison, codec)
     end
 
     val_1 = [1, 2, "three", %{"figure" => 'four'}]

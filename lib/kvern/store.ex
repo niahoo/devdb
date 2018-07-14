@@ -32,6 +32,33 @@ defmodule Kvern.Store do
   defp wok({:ok, val}), do: {:ok, val}
   defp wok(val), do: {:ok, val}
 
+  def open(name, opts \\ []) when is_atom(name) do
+    opts =
+      opts
+      |> Keyword.put(:name, name)
+      |> setup_disk_copy()
+
+    Supervisor.start_child(Kvern.StoreSupervisor, [opts])
+  end
+
+  def setup_disk_copy(opts) do
+    if opts[:disk_copy] do
+      dir = opts[:disk_copy][:dir]
+      codec = opts[:disk_copy][:codec]
+
+      # We use a disk repo as a seed
+      seed = Kvern.Seed.new(Kvern.Repo.Disk, dir: dir, codec: codec)
+      replicate = {Kvern.Repo.Disk, dir: dir, codec: codec}
+
+      opts
+      |> Keyword.update(:seeds, [seed], fn seeds -> seeds ++ [seed] end)
+      |> Keyword.update(:replicates, [replicate], fn replicates -> replicates ++ [replicate] end)
+      |> Keyword.delete(:disk_copy)
+    else
+      opts
+    end
+  end
+
   def start_link(opts) do
     gen_opts =
       Keyword.take(opts, [:name])
@@ -86,7 +113,16 @@ defmodule Kvern.Store do
       repo: repo
     }
 
-    state = Enum.reduce(opts[:seeds], state, &apply_seed/2)
+    state =
+      if opts[:seeds] do
+        Logger.debug("Applying seed")
+        s = Enum.reduce(opts[:seeds], state, &apply_seed/2)
+        Logger.debug("Seeding ok")
+        s
+      else
+        state
+      end
+
     {:ok, state}
   end
 

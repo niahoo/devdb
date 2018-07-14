@@ -26,32 +26,9 @@ defmodule Kvern do
 
   def key_maxlen, do: @key_maxlen
 
-  def open(name, opts \\ []) when is_atom(name) do
-    opts =
-      opts
-      |> Keyword.put(:name, name)
-      |> setup_disk_copy()
+  def open(name, opts \\ [])
 
-    Supervisor.start_child(Kvern.StoreSupervisor, [opts])
-  end
-
-  def setup_disk_copy(opts) do
-    if opts[:disk_copy] do
-      dir = opts[:disk_copy][:dir]
-      codec = opts[:disk_copy][:codec]
-
-      # We use a disk repo as a seed
-      seed = Kvern.Seed.new(Kvern.Repo.Disk, dir: dir, codec: codec)
-      replicate = {Kvern.Repo.Disk, dir: dir, codec: codec}
-
-      opts
-      |> Keyword.update(:seeds, [seed], fn seeds -> seeds ++ [seed] end)
-      |> Keyword.update(:replicates, [replicate], fn replicates -> replicates ++ [replicate] end)
-      |> Keyword.delete(:disk_copy)
-    else
-      opts
-    end
-  end
+  defdelegate open(name, opts), to: Kvern.Store
 
   def whereis(name), do: Store.whereis(name)
 
