@@ -8,6 +8,8 @@ defmodule Kvern.Repo do
   @callback keys(repo_state()) :: [any()]
   @callback nuke(repo_state()) :: repo_state()
   @callback put(repo_state(), key :: any(), value :: any()) :: repo_state()
+  @callback transactional(repo_state()) ::
+              {:ok, {module :: atom(), [any()]}} | {:error, :unsupported}
 
   @m __MODULE__
 
@@ -42,6 +44,11 @@ defmodule Kvern.Repo do
   def put(repo = %@m{mod: mod, state: state}, key, value) do
     IO.puts("#{print_mod(mod)}> PUT #{key}")
     %{repo | state: mod.put(state, key, value)}
+  end
+
+  def transactional(%@m{mod: mod, state: state}) do
+    {:ok, {new_mod, options}} = mod.transactional(state)
+    __MODULE__.new(new_mod, [{:transaction_for, mod} | options])
   end
 
   def put_in_backend(conf = beconf(write: true, repo: backend), key, value) do
@@ -143,6 +150,8 @@ defmodule Kvern.Repo do
   end
 
   defp print_mod(module) do
+    Process.sleep(100)
+
     module
     |> Module.split()
     |> Enum.drop(2)

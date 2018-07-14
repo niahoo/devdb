@@ -1,4 +1,4 @@
-defmodule Kvern.Repo.Transactional do
+defmodule Kvern.Repo.Map do
   use TODO
   @m __MODULE__
   @behaviour Kvern.Repo
@@ -24,6 +24,8 @@ defmodule Kvern.Repo.Transactional do
   end
 
   def nuke(_this) do
-    raise "Transactional should not be nuked but just ditched"
+    new([])
   end
+
+  def transactional(_), do: {:ok, {__MODULE__, []}}
 end

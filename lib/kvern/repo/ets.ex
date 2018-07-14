@@ -47,8 +47,11 @@ defmodule Kvern.Repo.Ets do
   end
 
   def keys(tab) do
+    IO.puts("fetching keys for tab #{inspect(tab)}")
     first = Ets.first(tab)
-    keys(tab, first, [])
+    ks = keys(tab, first, [])
+    IO.puts("found keys : #{inspect(ks)}")
+    ks
   end
 
   def keys(_tab, :"$end_of_table", acc), do: :lists.reverse(acc)
@@ -56,5 +59,9 @@ defmodule Kvern.Repo.Ets do
   def keys(tab, prev, acc) do
     next = Ets.next(tab, prev)
     keys(tab, next, [prev | acc])
+  end
+
+  def transactional(tab) do
+    {:ok, {Kvern.Repo.TransactionalETS, [tab: tab]}}
   end
 end

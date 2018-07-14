@@ -185,4 +185,6 @@ defmodule Kvern.Repo.Disk do
   def encode!(term, _opts), do: :erlang.term_to_binary(term)
 
   def decode!(binary, _opts), do: :erlang.binary_to_term(binary)
+
+  def transactional(_), do: {:error, :unsupported}
 end

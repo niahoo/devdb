@@ -250,7 +250,7 @@ defmodule Kvern.Store do
   end
 
   defp print_dump(~M(name, repo)) do
-    dump = "STORE DUMP\nSTORE #{name}\n\n"
+    dump = "STORE DUMP -------------------\nSTORE #{name}\n\n"
 
     repo
     |> Repo.keys()
@@ -261,6 +261,7 @@ defmodule Kvern.Store do
       dump = dump <> "   #{inspect(value, pretty: true)}\n"
       dump
     end)
+    |> Kernel.<>("END DUMP ---------------------\n")
     |> IO.puts()
   end
 
@@ -270,7 +271,7 @@ defmodule Kvern.Store do
     mref = Process.monitor(client_pid)
     ~M(repo) = state
 
-    transactional_repo = Repo.new(Repo.Transactional, read_fallback: repo)
+    transactional_repo = Repo.transactional(repo)
 
     state =
       state

@@ -37,6 +37,8 @@ defmodule Kvern.Repo.Multi do
   def fetch([first | _], key), do: Repo.fetch(first, key)
   def keys([first | _]), do: Repo.keys(first)
 
+  def transactional(_), do: {:error, :unsupported}
+
   # --
 
   defp build_replicate({mod, opts}) when is_atom(mod) and is_list(opts), do: Repo.new(mod, opts)

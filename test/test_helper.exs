@@ -1,3 +1,3 @@
 Keyword.new()
-|> Keyword.put(:exclude, [:skip2])
+|> Keyword.put(:exclude, [:skip])
 |> ExUnit.start()
