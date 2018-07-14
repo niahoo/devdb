@@ -1,4 +1,5 @@
 defmodule Kvern.Repo do
+  use TODO
   @type repo_state :: any()
 
   @callback new(opts :: [any()]) :: any()
@@ -10,41 +11,95 @@ defmodule Kvern.Repo do
 
   @m __MODULE__
 
-  defstruct mod: nil, state: nil, read_fallback: nil
+  defstruct mod: nil, state: nil, backend: nil
+
+  @type t :: %__MODULE__{}
+
+  require Record
+  # beconf = backend configuration
+  Record.defrecord(:beconf, repo: nil, read: false, write: false, warmup: false)
+
+  @type beconf ::
+          record(
+            :beconf,
+            repo: __MODULE__.t() | nil,
+            read: boolean(),
+            write: boolean(),
+            warmup: boolean()
+          )
+  # expands to: "@type user :: {:user, String.t, integer}"
 
   def new(mod, opts \\ []) do
-    %@m{mod: mod, state: mod.new(opts), read_fallback: opts[:read_fallback]}
+    backend = make_backend(opts[:backend])
+    %@m{mod: mod, state: mod.new(opts), backend: backend}
+  end
+
+  def put(repo = %@m{mod: mod, state: state, backend: beconf(write: true) = bconf}, key, value) do
+    IO.puts("#{print_mod(mod)}> PUT #{key} *")
+    %{repo | state: mod.put(state, key, value), backend: put_in_backend(bconf, key, value)}
   end
 
   def put(repo = %@m{mod: mod, state: state}, key, value) do
+    IO.puts("#{print_mod(mod)}> PUT #{key}")
     %{repo | state: mod.put(state, key, value)}
   end
 
+  def put_in_backend(conf = beconf(write: true, repo: backend), key, value) do
+    new_backend = __MODULE__.put(backend, key, value)
+    beconf(conf, repo: new_backend)
+  end
+
+  def delete(repo = %@m{mod: mod, state: state, backend: beconf(write: true) = bconf}, key) do
+    IO.puts("#{print_mod(mod)}> DELETE #{key} *")
+    %{repo | state: mod.delete(state, key), backend: delete_in_backend(bconf, key)}
+  end
+
   def delete(repo = %@m{mod: mod, state: state}, key) do
+    IO.puts("#{print_mod(mod)}> DELETE #{key}")
     %{repo | state: mod.delete(state, key)}
   end
 
+  def delete_in_backend(conf = beconf(write: true, repo: backend), key) do
+    new_backend = __MODULE__.delete(backend, key)
+    beconf(conf, repo: new_backend)
+  end
+
   def nuke(repo = %@m{mod: mod, state: state}) do
+    IO.puts("#{print_mod(mod)}> NUKE")
     %{repo | state: mod.nuke(state)}
   end
 
-  # Here if we use the fallback, as we do not return the repository from
-  # fetch(), we cannot put the fallback value in the repo.
-  def fetch(%@m{mod: mod, state: state, read_fallback: read_fallback}, key) do
-    case {mod.fetch(state, key), read_fallback} do
+  @todo """
+  The repo is updated with the fallback value. If we want to use permanent data
+  structures like maps, we also must return the new repo after fetch.
+  """
+  def fetch(%@m{mod: mod, state: state, backend: backend}, key) do
+    IO.puts("#{print_mod(mod)}> FETCH #{key}")
+
+    case {mod.fetch(state, key), backend} do
       {{:ok, found}, _} ->
         {:ok, found}
 
-      # no fallback to get the data
-      {:error, nil} ->
-        :error
+      {:error, beconf(repo: be_repo, read: true)} ->
+        IO.puts("#{print_mod(mod)}> FETCH FALLBACK #{key} <= #{print_mod(be_repo.mod)}")
 
-      {:error, %@m{} = fallback} ->
-        fetch(fallback, key)
+        case fetch(be_repo, key) do
+          {:ok, val} ->
+            mod.put_as_side_effect!(state, key, val)
+            {:ok, val}
+
+          :error ->
+            :error
+        end
+
+      # no fallback to get the data
+      {:error, _} ->
+        :error
     end
   end
 
   def fetch!(%@m{mod: mod, state: state}, key) do
+    IO.puts("#{print_mod(mod)}> FETCH! #{key}")
     unwrap_fetch(mod.fetch(state, key), mod, key)
   end
 
@@ -52,6 +107,7 @@ defmodule Kvern.Repo do
   def unwrap_fetch(:error, mod, key), do: raise(KeyError, key: key, term: {__MODULE__, mod})
 
   def keys(%@m{mod: mod, state: state}) do
+    IO.puts("#{print_mod(mod)}> KEYS")
     mod.keys(state)
   end
 
@@ -69,4 +125,28 @@ defmodule Kvern.Repo do
 
   def apply_up({:put, key, val}, repo), do: @m.put(repo, key, val)
   def apply_up({:delete, key}, repo), do: @m.delete(repo, key)
+
+  def set_backend(repo = %@m{}, backend = beconf()) do
+    %@m{repo | backend: backend}
+  end
+
+  defp make_backend(nil), do: nil
+
+  defp make_backend(opts) do
+    {mod, conf} = Keyword.fetch!(opts, :repo)
+    repo = __MODULE__.new(mod, conf)
+    write = Keyword.fetch!(opts, :write)
+    read = Keyword.fetch!(opts, :read)
+    warmup = Keyword.fetch!(opts, :warmup)
+
+    beconf(repo: repo, write: write, read: read, warmup: warmup)
+  end
+
+  defp print_mod(module) do
+    module
+    |> Module.split()
+    |> Enum.drop(2)
+    |> Enum.join()
+    |> String.pad_trailing(16)
+  end
 end

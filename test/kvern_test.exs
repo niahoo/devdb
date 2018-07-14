@@ -20,11 +20,9 @@ defmodule KvernTest do
   end
 
   def launch_store(store, dir, codec \\ nil) do
-    disk_copy = [dir: dir, codec: codec]
-    {:ok, _} = Kvern.open(store, disk_copy: disk_copy)
+    {:ok, _} = Kvern.open(store, disk_copy: dir, codec: codec)
   end
 
-  @tag :skip
   test "put / get simple value" do
     key = "mykey"
     val = :some_value
@@ -38,7 +36,6 @@ defmodule KvernTest do
     assert recup === val
   end
 
-  @tag :skip
   test "get lazy" do
     key = "my_lazy_key"
     # the key does not exist yet, but this is a test that we can delete
@@ -50,7 +47,6 @@ defmodule KvernTest do
     assert :error === Kvern.fetch(@store, key)
   end
 
-  @tag :skip
   test "keys and delete" do
     keys_before = Kvern.keys(@store)
     assert is_list(keys_before)
@@ -71,7 +67,6 @@ defmodule KvernTest do
     assert Enum.sort(keys_end) === Enum.sort(keys_before)
   end
 
-  @tag :skip
   test "delete / recover" do
     key = "ghost"
     assert :ok === Kvern.put(@store, key, "Tom Joad")
@@ -81,7 +76,7 @@ defmodule KvernTest do
     assert :error === Kvern.fetch(@store, key)
   end
 
-  @tag :skip
+  @tag :skip2
   test "simple transaction rollback" do
     key = "tkey"
     val = %{xyz: "This is some value"}
@@ -103,7 +98,7 @@ defmodule KvernTest do
     assert val === Kvern.get(@store, key)
   end
 
-  @tag :skip
+  @tag :skip2
   test "simple transaction commit" do
     key = "tkey"
     val = %{xyz: "This is some value"}
@@ -121,7 +116,6 @@ defmodule KvernTest do
     assert new_val === Kvern.get(@store, key)
   end
 
-  @tag :skip
   test "print a dump" do
     :ok = Kvern.nuke(@store)
     :ok = Kvern.put!(@store, "some_int", 1_234_567)
@@ -136,7 +130,6 @@ defmodule KvernTest do
     Process.sleep(500)
   end
 
-  @tag :skip
   test "call by pid" do
     [{pid, _}] = Registry.lookup(Kvern.Registry, @store)
     assert is_pid(pid)
@@ -151,10 +144,11 @@ defmodule KvernTest do
     Kvern.shutdown(@store)
     {:ok, _pid} = launch_store()
     assert :my_value_1 === Kvern.fetch!(@store, "my-key-1")
+    # fetch twice for warmup
+    Kvern.fetch!(@store, "my-key-1")
     assert :error === Kvern.fetch(@store, "my-key-2")
   end
 
-  @tag :skip
   test "restore json" do
     # Poison cannot encode atoms as values, so here we will try integers,
     # strings, maps, lists ... but all those tests are actually Poison's unit

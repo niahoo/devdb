@@ -58,6 +58,18 @@ defmodule Kvern.Repo.Disk do
     key
     |> key_to_filename(state.file_ext, state.dir)
     |> read_file(state.codec)
+    |> case do
+      {:ok, [@vtag, ^key, value]} ->
+        {:ok, value}
+
+      {:error, {:enonent, _}} ->
+        # No file, key does not exist
+        :error
+
+      {:error, reason} ->
+        Logger.error("Could not fetch file for key #{inspect(key)}, reason: #{inspect(reason)}")
+        :error
+    end
   end
 
   def keys(_state) do
@@ -77,7 +89,7 @@ defmodule Kvern.Repo.Disk do
     ext = state.file_ext
     path = key_to_filename(key, ext, state.dir)
 
-    Logger.debug("Write to disk : #{inspect(key)}")
+    # Logger.debug("Write to disk : #{inspect(key)}")
     File.write!(path, binary, [:raw])
 
     state
@@ -102,6 +114,14 @@ defmodule Kvern.Repo.Disk do
   def to_update_format!({:ok, [@vtag, key, value]}), do: {:put, key, value}
 
   def read_file(path, codec) do
+    if File.exists?(path) do
+      decode_file(path, codec)
+    else
+      {:error, {:enonent, path}}
+    end
+  end
+
+  def decode_file(path, codec) do
     try do
       ext = Codec.ext(codec)
       basename = Path.basename(path)

@@ -23,40 +23,35 @@ defmodule Kvern.Store do
 
   def via(pid) when is_pid(pid), do: pid
   def via(name), do: {:via, Registry, {@registry, name}}
-  def whereis(name), do: Registry.whereis_name({@registry, name})
-
-  defp uwok!({:ok, val}), do: val
-
-  defp wok({:error, _} = err), do: err
-  defp wok(:ok), do: :ok
-  defp wok({:ok, val}), do: {:ok, val}
-  defp wok(val), do: {:ok, val}
 
   def open(name, opts \\ []) when is_atom(name) do
-    opts =
-      opts
-      |> Keyword.put(:name, name)
-      |> setup_disk_copy()
+    # At the moment, we will force the shape of the different storages on the
+    # server :
+
+    # The basic store is ETS
+
+    # If the option :disk_copy is given (and is a valid directory), the ETS
+    # store will be backed by a Disk store. The ETS store will be configured to
+    # be warmed-up, i.e. it will import everything from the Disk store.
+
+    # On top of all this, during transactions we will add a TransactionalETS
+    # layer that will read the same table as the ETS store but will keep log of
+    # modifications to be able to rollback. The ETS table belongs to the store,
+    # so if a problem happens in a transaction, the store should crash and the
+    # ETS table will be deleted, so no problem of with failed rollbacks
+
+    IO.puts("open with opts #{inspect(opts)}")
+
+    repo =
+      if opts[:disk_copy] do
+        ets_with_disk_backend(opts)
+      else
+        default_ets_repo(opts)
+      end
+
+    opts = [name: name, repo: repo]
 
     Supervisor.start_child(Kvern.StoreSupervisor, [opts])
-  end
-
-  def setup_disk_copy(opts) do
-    if opts[:disk_copy] do
-      dir = opts[:disk_copy][:dir]
-      codec = opts[:disk_copy][:codec]
-
-      # We use a disk repo as a seed
-      seed = Kvern.Seed.new(Kvern.Repo.Disk, dir: dir, codec: codec)
-      replicate = {Kvern.Repo.Disk, dir: dir, codec: codec}
-
-      opts
-      |> Keyword.update(:seeds, [seed], fn seeds -> seeds ++ [seed] end)
-      |> Keyword.update(:replicates, [replicate], fn replicates -> replicates ++ [replicate] end)
-      |> Keyword.delete(:disk_copy)
-    else
-      opts
-    end
   end
 
   def start_link(opts) do
@@ -96,17 +91,36 @@ defmodule Kvern.Store do
     GenLoop.call(via(db), :get_state)
   end
 
+  defp ets_with_disk_backend(opts) do
+    disk_repo = {Kvern.Repo.Disk, dir: opts[:disk_copy], codec: opts[:codec]}
+
+    backend = [repo: disk_repo, read: true, write: true, warmup: true]
+    default_ets_repo([{:backend, backend} | opts])
+  end
+
+  defp default_ets_repo(opts) do
+    module = Repo.Ets
+    take = [:ets, :backend]
+    {options, other} = Keyword.split(opts, take)
+    Logger.debug("Ignoring options for ETS repo #{inspect(Keyword.keys(other))}")
+
+    {module, options}
+  end
+
+  def whereis(name), do: Registry.whereis_name({@registry, name})
+
+  defp uwok!({:ok, val}), do: val
+
+  defp wok({:error, _} = err), do: err
+  defp wok(:ok), do: :ok
+  defp wok({:ok, val}), do: {:ok, val}
+  defp wok(val), do: {:ok, val}
+
   # -- Database initialization ------------------------------------------------
 
   def init(opts) do
-    repo =
-      case opts[:replicates] do
-        list when is_list(list) and length(list) > 0 ->
-          Repo.new(Repo.Multi, [Repo.Ets | opts[:replicates]])
-
-        _otherwise ->
-          Repo.new(Repo.Ets)
-      end
+    {repo_module, repo_conf} = Keyword.fetch!(opts, :repo)
+    repo = Repo.new(repo_module, repo_conf)
 
     state = %S{
       name: opts[:name],
@@ -318,7 +332,7 @@ defmodule Kvern.Store do
     rescue
       e in _ ->
         msg = Exception.message(e)
-        Logger.error(msg)
+        Logger.error("#{msg}\n(stacktrace) #{inspect(System.stacktrace(), pretty: true)}")
         reply = {:error, {:command_exception, command, e}}
         {:rollback, reply}
     else

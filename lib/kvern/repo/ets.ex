@@ -4,11 +4,11 @@ defmodule Kvern.Repo.Ets do
 
   @behaviour Kvern.Repo
 
-  defstruct [:tab]
+  defstruct tab: nil
 
   @todo "Allow ETS configuration or even provide the table"
-  def new(_opts) do
-    tab = Ets.new(__MODULE__, [:protected, :set])
+  def new(opts \\ []) do
+    tab = Ets.new(__MODULE__, opts[:ets] || [:set, :protected])
     tab
   end
 
@@ -18,6 +18,9 @@ defmodule Kvern.Repo.Ets do
         tab
     end
   end
+
+  @todo "Remove put_as_side_effect! as we can return new repo from Repo.fetch"
+  def put_as_side_effect!(tab, key, value), do: put(tab, key, value)
 
   def fetch(tab, key) do
     case Ets.lookup(tab, key) do

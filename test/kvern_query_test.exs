@@ -17,8 +17,7 @@ defmodule KvernQueryTest do
   end
 
   def launch_store(store, dir, codec \\ nil) do
-    disk_copy = [dir: dir, codec: codec]
-    {:ok, _} = Kvern.open(store, disk_copy: disk_copy)
+    {:ok, _} = Kvern.open(store, disk_copy: dir, codec: codec)
     :ok = Kvern.nuke(store)
     :ok = Kvern.put!(store, "a", {:group_1, :group_3})
     :ok = Kvern.put!(store, "b", {:group_1, :group_3})
@@ -30,7 +29,7 @@ defmodule KvernQueryTest do
     :ok = Kvern.put!(store, "i", {:group_2, :group_6})
   end
 
-  @tag :skip
   test "simple query" do
+    IO.puts("bring back transactions before query")
   end
 end
