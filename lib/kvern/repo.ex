@@ -11,9 +11,13 @@ defmodule Kvern.Repo do
   @callback transactional(repo_state()) ::
               {:ok, {module :: atom(), [any()]}} | {:error, :unsupported}
 
-  @m __MODULE__
+  @todo "Enable transactional callbacks"
+  @todo "Use protocols ?"
+  # @callback rollback(repo_state()) :: repo_state()
 
   defstruct mod: nil, state: nil, backend: nil
+
+  @m __MODULE__
 
   @type t :: %__MODULE__{}
 
@@ -37,12 +41,23 @@ defmodule Kvern.Repo do
   end
 
   def put(repo = %@m{mod: mod, state: state, backend: beconf(write: true) = bconf}, key, value) do
-    IO.puts("#{print_mod(mod)}> PUT #{key} *")
-    %{repo | state: mod.put(state, key, value), backend: put_in_backend(bconf, key, value)}
+    IO.puts("#{print_mod(mod)}> PUT #{key} * : #{inspect(value)}")
+
+    # It's important to update the store before the backend if the store is in
+    # transactional mode and want to backup the data. ETS and TransactionalETS
+    # work on the same table.
+    todo("""
+    Use records in ETS to store value and transactional value on
+    different fields ?
+    """)
+
+    new_state = mod.put(state, key, value)
+    new_backend = put_in_backend(bconf, key, value)
+    %{repo | state: new_state, backend: new_backend}
   end
 
   def put(repo = %@m{mod: mod, state: state}, key, value) do
-    IO.puts("#{print_mod(mod)}> PUT #{key}")
+    IO.puts("#{print_mod(mod)}> PUT #{key} : #{inspect(value)}")
     %{repo | state: mod.put(state, key, value)}
   end
 
@@ -58,7 +73,11 @@ defmodule Kvern.Repo do
 
   def delete(repo = %@m{mod: mod, state: state, backend: beconf(write: true) = bconf}, key) do
     IO.puts("#{print_mod(mod)}> DELETE #{key} *")
-    %{repo | state: mod.delete(state, key), backend: delete_in_backend(bconf, key)}
+    # Here we must delete on the store before doing so on the backend for
+    # transactions. see put/3
+    new_state = mod.delete(state, key)
+    new_backend = delete_in_backend(bconf, key)
+    %{repo | state: new_state, backend: new_backend}
   end
 
   def delete(repo = %@m{mod: mod, state: state}, key) do
@@ -135,6 +154,16 @@ defmodule Kvern.Repo do
 
   def set_backend(repo = %@m{}, backend = beconf()) do
     %@m{repo | backend: backend}
+  end
+
+  def commit(_repo = %@m{}) do
+    :ok
+  end
+
+  def rollback(repo = %@m{mod: mod, state: state}) do
+    IO.puts("#{print_mod(mod)}> ROLLBACK")
+
+    %{repo | state: mod.rollback(state)}
   end
 
   defp make_backend(nil), do: nil

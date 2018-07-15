@@ -1,5 +1,6 @@
 defmodule KvernTest do
   use ExUnit.Case, async: false
+  require Logger
   doctest Kvern
 
   @store __MODULE__
@@ -101,6 +102,12 @@ defmodule KvernTest do
     assert :ok === Kvern.rollback(@store)
     assert Kvern.tainted(@store) === []
     assert val === Kvern.get(@store, key)
+  end
+
+  test "rollback advanced" do
+    # Logger.warn("@todo test begin/delete/rollback , value should not be deleted")
+    # Logger.warn("@todo test begin/put/delete/rollback, value should not be changed")
+    # Logger.warn("@todo test begin/delete/put/rollback, value should not be changed")
   end
 
   @tag :skip

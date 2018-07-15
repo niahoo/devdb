@@ -13,6 +13,8 @@ defmodule Kvern.Repo.Ets do
   end
 
   def put(tab, key, value) do
+    IO.puts("perform ETS insert of #{key} = #{inspect(value)}")
+
     case Ets.insert(tab, [{key, value}]) do
       true ->
         tab

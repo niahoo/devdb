@@ -291,21 +291,16 @@ defmodule Kvern.Store do
 
   defp transact_rollback(state) do
     # set the old repo back in state.repo
-    transact_cleanup(state, state.backup)
+    state
+    |> Map.put(:repo, Repo.rollback(state.repo))
+    |> transact_cleanup(state.backup)
   end
 
   defp transact_commit(state) do
     # set the old repo back in state.repo
-    updates = tainted_to_updates(state)
+    {:ok, _new_transact_repo, updates} = Repo.commit(state.repo)
     repo = Repo.apply_updates(state.backup, updates)
     transact_cleanup(state, repo)
-  end
-
-  defp tainted_to_updates(state) do
-    %{tainted: tainted, deleted: deleted, repo: repo} = state
-    tainted_updates = Enum.map(tainted, fn key -> {:put, key, Repo.fetch!(repo, key)} end)
-    deleted_updates = Enum.map(deleted, fn key -> {:delete, key} end)
-    tainted_updates ++ deleted_updates
   end
 
   defp transact_cleanup(state, repo) do
