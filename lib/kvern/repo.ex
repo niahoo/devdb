@@ -1,5 +1,6 @@
 defmodule Kvern.Repo do
   use TODO
+
   @type repo_state :: any()
 
   @callback new(opts :: [any()]) :: any()
@@ -159,6 +160,8 @@ defmodule Kvern.Repo do
   end
 
   def commit(repo = %@m{mod: mod, state: state}) do
+    IO.puts("#{print_mod(mod)}> COMMIT")
+
     case mod.commit(state) do
       {:ok, new_state, updates} ->
         {:ok, %@m{repo | state: new_state}, updates}

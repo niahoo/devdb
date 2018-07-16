@@ -1,5 +1,20 @@
 defmodule Kvern.Repo.TransactionalETS do
   use TODO
+
+  @todo """
+  Change rollback / commit mechanism (Check doc below)
+  """
+
+  # Rollback / Commit mechanism
+  #
+  # This module has a serious flaw because for each modification, we perform the
+  # modification on the ETS table, but we store the modification internally to
+  # be able to give a change log back to the repo. The repo will now be able to
+  # perform these changes on the non-transactional repo, and down to the
+  # backend.
+  #
+  # But with an ETS table, which is mutable, those modifications are already ok.
+
   @m __MODULE__
   @behaviour Kvern.Repo
   alias Kvern.Repo.Ets, as: BaseETS
@@ -9,7 +24,7 @@ defmodule Kvern.Repo.TransactionalETS do
   changes ?
   """
 
-  defstruct base_state: nil, backup: %{}
+  defstruct base_state: nil, changelog: %{}, backup: %{}
 
   def new(opts) do
     IO.puts("\nBuild #{__MODULE__}, opts: #{inspect(opts)}")
@@ -20,24 +35,24 @@ defmodule Kvern.Repo.TransactionalETS do
     IO.puts("Inside put !")
     # We cannot use pipes here as order of operations will call the value for
     # Map.put (i.e. the actual ETS modification) befor the Map subject (i.e.
-    # this |> backup_val(key))
-    this = backup_val(this, key)
+    # this |> log_change(key))
+    this = backup_value(this, key)
+    this = log_change(this, {:put, key, value})
     Map.put(this, :base_state, base_ets(:put, [this.base_state, key, value]))
   end
 
   def delete(this, key) do
-    this = backup_val(this, key)
+    this = backup_value(this, key)
+    this = log_change(this, {:delete, key})
     Map.put(this, :base_state, base_ets(:delete, [this.base_state, key]))
   end
 
-  defp backup_val(this, key) do
+  defp backup_value(this, key) do
     # We want to backup values only once, at first modification. After this
     # point, if any modification of the same key occurs, it changes the value
     # set within the transaction, which we do not care.
     new_backup =
       Map.put_new_lazy(this.backup, key, fn ->
-        IO.puts("BACKUP #{key}")
-
         val =
           case base_ets(:fetch, [this.base_state, key]) do
             {:ok, original_value} ->
@@ -51,12 +66,28 @@ defmodule Kvern.Repo.TransactionalETS do
               :inserted
           end
 
-        IO.puts(" =  #{inspect(val)}")
+        IO.puts("BACKUP #{key} =  #{inspect(val)}")
         val
       end)
 
     IO.puts("new backup : #{inspect(new_backup)}")
     Map.put(this, :backup, new_backup)
+  end
+
+  # To register the log, we extract the key from the data in order to override
+  # each changes for a single key
+
+  defp log_change(this, {:put, key, value}),
+    do: Map.put(this, :changelog, Map.put(this.changelog, key, {:put, value}))
+
+  defp log_change(this, {:delete, key}),
+    do: Map.put(this, :changelog, Map.put(this.changelog, key, :delete))
+
+  defp changelog_to_updates(changelog) do
+    Enum.map(changelog, fn
+      {key, :delete} -> {:delete, key}
+      {key, {:put, value}} -> {:put, key, value}
+    end)
   end
 
   def fetch(this, key) do
@@ -83,18 +114,19 @@ defmodule Kvern.Repo.TransactionalETS do
       this.backup
       |> Enum.reduce(this.base_state, &revert_change/2)
 
-    %@m{this | base_state: new_base_state}
+    %@m{this | base_state: new_base_state, backup: %{}, changelog: %{}}
   end
 
   def commit(this) do
     # When committing, there is nothing to do with the data as the table is
-    # already up to date.
-    # We will only clean the backup
-    new_this = Map.put(this, :backup, %{})
+    # already up to date. But the non-transactional repository may have backend
+    # that still have to be updated. We will only clean the backup
+    updates = changelog_to_updates(this.changelog)
+    new_this = %@m{this | backup: %{}, changelog: %{}}
+
     # The ETS repo expets an update to perfom on the table to validate the
     # transaction. Let it know that all is good with an empty list :)
-    ets_updates = []
-    {:ok, new_this, ets_updates}
+    {:ok, new_this, updates}
   end
 
   defp revert_change({key, {:updated, original_value}}, base_state) do

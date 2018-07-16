@@ -87,32 +87,55 @@ defmodule Kvern.Store do
     end
   end
 
-  def transaction(db, fun) do
-    case fun.() do
-      {:ok, reply} ->
-        commit(db)
-        {:ok, reply}
+  def transaction(db, fun) when is_function(fun, 0) do
+    begin(db)
+    rep = ccatch(fun)
+    transaction_finalize(db, rep)
+  end
 
-      atom when atom in [:commit, :ok] ->
-        commit(db)
-        :ok
+  def transaction(db, fun) when is_function(fun, 1) do
+    begin(db)
+    rep = ccatch(fun, [db])
+    transaction_finalize(db, rep)
+  end
 
-      atom when atom in [:rollback, :error] ->
-        rollback(db)
-        :error
-
-      {:error, error} ->
-        rollback(db)
-        {:error, error}
-    end
+  defp ccatch(fun, args \\ []) do
+    apply(fun, args)
   rescue
     e ->
-      rollback(db)
-      {:error, e}
+      {:error, Exception.message(e)}
   catch
     :throw, e ->
-      rollback(db)
       {:error, e}
+  end
+
+  defp transaction_finalize(db, :ok) do
+    commit(db)
+    :ok
+  end
+
+  defp transaction_finalize(db, {:ok, reply}) do
+    commit(db)
+    {:ok, reply}
+  end
+
+  defp transaction_finalize(db, {:error, reason}) do
+    rollback(db)
+    {:error, reason}
+  end
+
+  defp transaction_finalize(db, reply) do
+    rollback(db)
+
+    raise """
+
+    Kvern.transaction callback must return either :ok and {:ok, value} to commit
+    the transaction, or {:error, reason} to roll back.
+
+    Reply: #{inspect(reply)}
+
+    Changes have been rolled back.
+    """
   end
 
   def get_state(db) do
