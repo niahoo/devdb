@@ -14,6 +14,8 @@ defmodule Kvern.Repo do
   @todo "Enable transactional callbacks"
   @todo "Use protocols ?"
   # @callback rollback(repo_state()) :: repo_state()
+  # @callback commit(repo_state()) ::
+  #             {:ok, repo_state(), updates_to_perform :: any()} | {:error, reason :: any()}
 
   defstruct mod: nil, state: nil, backend: nil
 
@@ -156,8 +158,14 @@ defmodule Kvern.Repo do
     %@m{repo | backend: backend}
   end
 
-  def commit(_repo = %@m{}) do
-    :ok
+  def commit(repo = %@m{mod: mod, state: state}) do
+    case mod.commit(state) do
+      {:ok, new_state, updates} ->
+        {:ok, %@m{repo | state: new_state}, updates}
+
+      {:error, _} = err ->
+        err
+    end
   end
 
   def rollback(repo = %@m{mod: mod, state: state}) do

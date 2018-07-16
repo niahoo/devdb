@@ -6,6 +6,7 @@ defmodule Kvern do
   defdelegate begin(db), to: Store
   defdelegate commit(db), to: Store
   defdelegate rollback(db), to: Store
+  defdelegate transaction(db, fun), to: Store
 
   @type t_update :: {:put, key :: any(), value :: any()} | {:delete, key :: any()}
 
@@ -82,8 +83,8 @@ defmodule Kvern do
   def unwrap_put(:ok), do: :ok
   def unwrap_put({:error, reason}), do: raise("could not put #{inspect(reason)}")
 
-  def unwrap_fetch({:ok, val}, _, _), do: val
-  def unwrap_fetch(:error, db, key), do: raise(KeyError, key: key, term: {__MODULE__, db})
+  defp unwrap_fetch({:ok, val}, _, _), do: val
+  defp unwrap_fetch(:error, db, key), do: raise(KeyError, key: key, term: {__MODULE__, db})
 
   # Defines a simple macro that hardcode the store name in the calls to the API
   # @optimize : this doubles every function call ...

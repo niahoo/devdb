@@ -110,7 +110,6 @@ defmodule KvernTest do
     # Logger.warn("@todo test begin/delete/put/rollback, value should not be changed")
   end
 
-  @tag :skip
   test "simple transaction commit" do
     key = "tkey"
     val = %{xyz: "This is some value"}

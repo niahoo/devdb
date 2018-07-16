@@ -86,6 +86,17 @@ defmodule Kvern.Repo.TransactionalETS do
     %@m{this | base_state: new_base_state}
   end
 
+  def commit(this) do
+    # When committing, there is nothing to do with the data as the table is
+    # already up to date.
+    # We will only clean the backup
+    new_this = Map.put(this, :backup, %{})
+    # The ETS repo expets an update to perfom on the table to validate the
+    # transaction. Let it know that all is good with an empty list :)
+    ets_updates = []
+    {:ok, new_this, ets_updates}
+  end
+
   defp revert_change({key, {:updated, original_value}}, base_state) do
     base_ets(:put, [base_state, key, original_value])
   end

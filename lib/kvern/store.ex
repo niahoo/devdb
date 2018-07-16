@@ -87,6 +87,34 @@ defmodule Kvern.Store do
     end
   end
 
+  def transaction(db, fun) do
+    case fun.() do
+      {:ok, reply} ->
+        commit(db)
+        {:ok, reply}
+
+      atom when atom in [:commit, :ok] ->
+        commit(db)
+        :ok
+
+      atom when atom in [:rollback, :error] ->
+        rollback(db)
+        :error
+
+      {:error, error} ->
+        rollback(db)
+        {:error, error}
+    end
+  rescue
+    e ->
+      rollback(db)
+      {:error, e}
+  catch
+    :throw, e ->
+      rollback(db)
+      {:error, e}
+  end
+
   def get_state(db) do
     GenLoop.call(via(db), :get_state)
   end
