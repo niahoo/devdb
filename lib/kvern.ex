@@ -54,6 +54,10 @@ defmodule Kvern do
     send_command(db, {:kv_read, :fetch, [key]})
   end
 
+  def select(db, filter) do
+    send_command(db, {:select, filter})
+  end
+
   def fetch!(db, key), do: unwrap_fetch(fetch(db, key), db, key)
 
   def keys(db) do

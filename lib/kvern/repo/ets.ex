@@ -63,6 +63,26 @@ defmodule Kvern.Repo.Ets do
     keys(tab, next, [prev | acc])
   end
 
+  def select(tab, filter) when is_function(filter, 1) do
+    wrapped_filter = fn {key, value}, acc ->
+      if filter.({key, value}) do
+        [{key, value} | acc]
+      else
+        acc
+      end
+    end
+
+    try do
+      {:ok, Ets.foldl(wrapped_filter, [], tab)}
+    rescue
+      e ->
+        {:error, Exception.message(e)}
+    catch
+      :throw, e ->
+        {:error, e}
+    end
+  end
+
   def transactional(tab) do
     {:ok, {Kvern.Repo.TransactionalETS, [tab: tab]}}
   end

@@ -1,23 +1,22 @@
 defmodule KvernQueryTest do
   use ExUnit.Case, async: false
 
-  @store __MODULE__
-
   @dir_queries File.cwd!() |> Path.join("test/stores/d3-queries")
+  @s3 __MODULE__
 
+  @stores_conf %{
+    @s3 => [disk_copy: @dir_queries]
+  }
   setup_all do
     Kvern.Repo.Disk.reset_dir(@dir_queries)
     Application.ensure_started(:kvern)
-    launch_store()
+    launch_store(@s3)
     :ok
   end
 
-  def launch_store() do
-    launch_store(@store, @dir_queries)
-  end
-
-  def launch_store(store, dir, codec \\ nil) do
-    {:ok, _} = Kvern.open(store, disk_copy: dir, codec: codec)
+  def launch_store(store) do
+    conf = Map.fetch!(@stores_conf, store)
+    {:ok, _} = Kvern.open(store, conf)
   end
 
   def seed(store) do
@@ -32,9 +31,22 @@ defmodule KvernQueryTest do
     :ok = Kvern.put!(store, "i", {:group_2, :group_6})
   end
 
-  @tag :skip
   test "simple query" do
-    seed(@store)
+    seed(@s3)
     IO.puts("bring back transactions before query")
+
+    {:ok, selection} =
+      Kvern.select(@s3, fn
+        {_, {:group_2, _}} -> true
+        _ -> false
+      end)
+
+    found_keys =
+      selection
+      |> Keyword.keys()
+      |> IO.inspect()
+      |> Enum.sort()
+
+    assert found_keys === ["f", "g", "h", "i"]
   end
 end

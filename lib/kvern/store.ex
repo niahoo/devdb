@@ -419,6 +419,10 @@ defmodule Kvern.Store do
     |> wok()
   end
 
+  defp run_command(state, {:select, filter}) do
+    {:reply, apply(Repo, :select, [state.repo, filter])}
+  end
+
   defp run_command(state, {:kv_read, read_fun, args}) do
     {:reply, apply(Repo, read_fun, [state.repo | args])}
   end

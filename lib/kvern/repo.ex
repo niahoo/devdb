@@ -17,6 +17,7 @@ defmodule Kvern.Repo do
   # @callback rollback(repo_state()) :: repo_state()
   # @callback commit(repo_state()) ::
   #             {:ok, repo_state(), updates_to_perform :: any()} | {:error, reason :: any()}
+  # @callback select(repo_state(), filter :: fn()) :: {:ok, list()} | {:error, reason :: any()}
 
   defstruct mod: nil, state: nil, backend: nil
 
@@ -177,6 +178,10 @@ defmodule Kvern.Repo do
     %{repo | state: mod.rollback(state)}
   end
 
+  def select(repo = %@m{mod: mod, state: state}, filter) do
+    mod.select(state, filter)
+  end
+
   defp make_backend(nil), do: nil
 
   defp make_backend(opts) do
@@ -190,7 +195,7 @@ defmodule Kvern.Repo do
   end
 
   defp print_mod(module) do
-    Process.sleep(100)
+    # Process.sleep(100)
 
     module
     |> Module.split()

@@ -66,6 +66,6 @@ defmodule Kvern.Mixfile do
   end
 
   defp elixirc_options(:dev), do: [warnings_as_errors: true]
-  defp elixirc_options(:test), do: [warnings_as_errors: true]
+  defp elixirc_options(:test), do: [warnings_as_errors: false]
   defp elixirc_options(_), do: nil
 end
