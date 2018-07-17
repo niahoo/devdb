@@ -21,19 +21,18 @@ defmodule KvernQueryTest do
 
   def seed(store) do
     :ok = Kvern.nuke(store)
-    :ok = Kvern.put!(store, "a", {:group_1, :group_3})
-    :ok = Kvern.put!(store, "b", {:group_1, :group_3})
-    :ok = Kvern.put!(store, "c", {:group_1, :group_4})
-    :ok = Kvern.put!(store, "e", {:group_1, :group_4})
-    :ok = Kvern.put!(store, "f", {:group_2, :group_5})
-    :ok = Kvern.put!(store, "g", {:group_2, :group_5})
-    :ok = Kvern.put!(store, "h", {:group_2, :group_6})
-    :ok = Kvern.put!(store, "i", {:group_2, :group_6})
+    :ok = Kvern.put!(store, "a", {:group_1, :team_3})
+    :ok = Kvern.put!(store, "b", {:group_1, :team_3})
+    :ok = Kvern.put!(store, "c", {:group_1, :team_4})
+    :ok = Kvern.put!(store, "e", {:group_1, :team_4})
+    :ok = Kvern.put!(store, "f", {:group_2, :team_5})
+    :ok = Kvern.put!(store, "g", {:group_2, :team_5})
+    :ok = Kvern.put!(store, "h", {:group_2, :team_6})
+    :ok = Kvern.put!(store, "i", {:group_2, :team_6})
   end
 
-  test "simple query" do
+  test "simple select" do
     seed(@s3)
-    IO.puts("bring back transactions before query")
 
     {:ok, selection} =
       Kvern.select(@s3, fn
@@ -41,12 +40,37 @@ defmodule KvernQueryTest do
         _ -> false
       end)
 
-    found_keys =
-      selection
-      |> Keyword.keys()
-      |> IO.inspect()
-      |> Enum.sort()
+    found_keys = select_group_keys_sorted(@s3, :group_2)
 
     assert found_keys === ["f", "g", "h", "i"]
+  end
+
+  test "transaction select" do
+    seed(@s3)
+
+    Kvern.transaction(@s3, fn ->
+      Kvern.put(@s3, "g", "something else")
+      Kvern.put(@s3, "h", "something else")
+
+      found_keys_inside = select_group_keys_sorted(@s3, :group_2)
+
+      assert found_keys_inside === ["h", "i"]
+    end)
+
+    found_keys_outside = select_group_keys_sorted(@s3, :group_2)
+    assert found_keys_outside === ["f", "g", "h", "i"]
+  end
+
+  defp select_group_keys_sorted(store, group) do
+    {:ok, selection} =
+      Kvern.select(store, fn
+        {_, {^group, _}} -> true
+        _ -> false
+      end)
+
+    selection
+    |> Keyword.keys()
+    |> IO.inspect()
+    |> Enum.sort()
   end
 end

@@ -94,6 +94,10 @@ defmodule Kvern.Repo.TransactionalETS do
     base_ets(:fetch, [this.base_state, key])
   end
 
+  def select(this, filter) do
+    base_ets(:select, [this.base_state, filter])
+  end
+
   def keys(this) do
     IO.inspect("this #{inspect(this)}")
     # keys = base_ets(:keys, [this.base_state])

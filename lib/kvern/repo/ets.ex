@@ -21,7 +21,7 @@ defmodule Kvern.Repo.Ets do
     end
   end
 
-  @todo "Remove put_as_side_effect! as we can return new repo from Repo.fetch"
+  @todo "Remove put_as_side_effect! once we can return new repo from Repo.fetch"
   def put_as_side_effect!(tab, key, value), do: put(tab, key, value)
 
   def fetch(tab, key) do
@@ -65,6 +65,8 @@ defmodule Kvern.Repo.Ets do
 
   def select(tab, filter) when is_function(filter, 1) do
     wrapped_filter = fn {key, value}, acc ->
+      IO.puts("filter of #{inspect(value)} : #{filter.({key, value})}")
+
       if filter.({key, value}) do
         [{key, value} | acc]
       else
