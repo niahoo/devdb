@@ -1,119 +1,46 @@
-defmodule SingleLock.Error do
-  @moduledoc false
-
-  defexception [:message]
-
-  @doc false
-  def exception(msg), do: %__MODULE__{message: msg}
-end
-
-defmodule SingleLock do
-  use GenLoop
-
-  def start(opts \\ []) do
-    opts =
-      opts
-      |> Keyword.put_new(:value, %{})
-
-    GenLoop.start(__MODULE__, opts)
-  end
-
-  def stop(sl, reason \\ :normal, timeout \\ :infinity) do
-    if Process.get({__MODULE__, :locked}) === true do
-      raise SingleLock.Error, message: "Cannot stop while lock is acquired"
-    end
-
-    GenLoop.stop(sl, reason, timeout)
-  end
-
-  @doc false
-  def force_stop(sl, reason \\ :normal, timeout \\ :infinity) do
-    GenLoop.stop(sl, reason, timeout)
-  end
-
-  def acquire(sl, timeout \\ :infinity) do
-    if Process.get({__MODULE__, :locked}) === true do
-      raise SingleLock.Error, message: "Cannot acquire while lock is already acquired"
-    end
-
-    Process.put({__MODULE__, :locked}, true)
-    GenLoop.call(sl, {:acquire, self()}, timeout)
-  end
-
-  def release(sl) do
-    GenLoop.cast(sl, {:release, self()})
-    :ok
-  end
-
-  def release(sl, new_value) do
-    GenLoop.cast(sl, {:release, self(), new_value})
-    :ok
-  end
-
-  ## -- server side --
-
-  defmodule S do
-    defstruct value: nil, owner: nil
-  end
-
-  def init(opts) do
-    {:ok, %S{value: opts[:value]}}
-  end
-
-  def enter_loop(state) do
-    await_client(state)
-  end
-
-  def await_client(%{owner: nil} = state) do
-    receive state do
-      rcall(from, {:acquire, owner_pid}) when is_pid(owner_pid) ->
-        reply(from, {:ok, state.value})
-        await_release(%S{state | owner: owner_pid})
-        rcall(from, :stop)
-    end
-  end
-
-  def await_release(%S{owner: owner_pid} = state) when is_pid(owner_pid) do
-    receive state do
-      rcast({:release, ^owner_pid}) ->
-        await_client(%S{state | owner: nil})
-
-      rcast({:release, ^owner_pid, new_value}) ->
-        await_client(%S{state | owner: nil, value: new_value})
-    end
-  end
-end
-
 defmodule SingleLockTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   test "start/stop the single lock" do
-    {:ok, pid} = SingleLock.start()
+    {:ok, pid} = SingleLock.start_link()
     assert is_pid(pid)
-    SingleLock.stop(pid, 1000)
+    SingleLock.stop(pid)
   end
 
   test "stop the single lock while locked" do
-    {:ok, pid} = SingleLock.start()
+    {:ok, pid} = SingleLock.start_link()
     assert is_pid(pid)
     assert {:ok, _} = SingleLock.acquire(pid)
 
     assert_raise SingleLock.Error, fn ->
-      SingleLock.stop(pid, 1000)
+      SingleLock.stop(pid)
     end
 
-    SingleLock.force_stop(pid, 1000)
+    SingleLock.force_stop(pid)
   end
 
   test "get the initial value" do
-    {:ok, pid} = SingleLock.start(name: __MODULE__, value: :something)
+    {:ok, pid} = SingleLock.start_link(value: :something)
     {:ok, :something} = SingleLock.acquire(pid)
 
-    SingleLock.force_stop(pid, 1000)
+    SingleLock.force_stop(pid)
   end
 
-  test "test aquiring when already acquired" do
-    {:ok, pid} = SingleLock.start(name: __MODULE__, value: :something)
+  test "generate the initial value with a fun" do
+    {:ok, pid} =
+      SingleLock.start_link(
+        value: fn ->
+          :from_inside_a_fun
+        end
+      )
+
+    assert {:ok, :from_inside_a_fun} === SingleLock.acquire(pid)
+
+    SingleLock.force_stop(pid)
+  end
+
+  test "test acquiring when already acquired" do
+    {:ok, pid} = SingleLock.start_link(value: :something)
     {:ok, :something} = SingleLock.acquire(pid)
 
     assert_raise SingleLock.Error, fn ->
@@ -121,8 +48,27 @@ defmodule SingleLockTest do
     end
   end
 
+  test "test acquiring but crashing" do
+    {:ok, sl} = SingleLock.start_link()
+
+    {:ok, sidekick} =
+      Sidekick.spawn(fn sidekick ->
+        {:ok, _} = SingleLock.acquire(sl)
+        IO.puts("Child acquired")
+        Sidekick.join(sidekick, :will_crash)
+        IO.puts("Child crash")
+        exit(:crashed_on_test_purpose)
+      end)
+
+    Sidekick.join(sidekick, :will_crash)
+
+    # Here the child crashed after acquiring the lock. We should be able to
+    # acquire the lock !
+    assert {:ok, _} = SingleLock.acquire(sl, 1000)
+  end
+
   test "update the value from another process" do
-    {:ok, sl} = SingleLock.start(name: __MODULE__, value: :something)
+    {:ok, sl} = SingleLock.start_link(value: :something)
     new_value = :new_val
 
     {:ok, sidekick} =
@@ -138,5 +84,62 @@ defmodule SingleLockTest do
     Sidekick.join(sidekick, :new_value_is_set)
     IO.puts("Child is done, getting value")
     assert {:ok, new_value} === SingleLock.acquire(sl)
+  end
+
+  test "Multi concurrency update" do
+    {:ok, sl} = SingleLock.start_link(value: 0)
+
+    maxcount = 100
+
+    tasks =
+      1..maxcount
+      |> Enum.map(fn x ->
+        Task.async(fn ->
+          # If each task could access the value concurrently, most of them would
+          # read 0 and set 1, so the result would be inferior to maxcount. Here, every
+          # acquire/release is serialized.
+          {:ok, n} = SingleLock.acquire(sl)
+          # Process.sleep(100)
+          :ok = SingleLock.release(sl, n + 1)
+        end)
+      end)
+
+    IO.puts("Tasks launched")
+
+    Enum.map(tasks, &Task.await/1)
+
+    assert {:ok, maxcount} === SingleLock.acquire(sl)
+    :ok = SingleLock.release(sl)
+  end
+
+  test "Multi concurrency no-release" do
+    # We let the procs shutdown in order to release, and we use an agent to
+    # control that every process is executed in a serialized way
+    {:ok, sl} = SingleLock.start_link()
+    {:ok, agent} = Agent.start_link(fn -> 0 end)
+
+    maxcount = 100
+
+    tasks =
+      1..maxcount
+      |> Enum.map(fn x ->
+        Task.async(fn ->
+          # If each task could access the value of the agent concurrently, they
+          # would all get the initial value. But because we acquire a Lock
+          # before, all is serialized.
+          {:ok, _} = SingleLock.acquire(sl)
+          n = Agent.get(agent, fn n -> n end)
+          # Note that we do not use the current state of the agent in the update
+          # function, because it MUST be what we got in get ! We could also pin
+          # the variable.
+          n = Agent.update(agent, fn _ -> n + 1 end)
+        end)
+      end)
+
+    IO.puts("Tasks launched")
+
+    Enum.map(tasks, &Task.await/1)
+
+    assert maxcount === Agent.get(agent, fn n -> n end)
   end
 end
