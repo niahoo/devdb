@@ -53,7 +53,8 @@ defmodule Kvern.Mixfile do
       {:gen_loop, "~> 0.1.0"},
       {:plain_fsm, github: "uwiger/plain_fsm", commit: "ae9eca8a8df8f61a32185b06882a55d60e62e904"},
       {:poison, "~> 3.1", only: [:dev, :test]},
-      {:cachex, ">= 3.0.0", only: [:dev, :test]}
+      {:cachex, ">= 3.0.0", only: [:dev, :test]},
+      {:mutex, ">= 1.0.0", only: [:dev, :test]}
     ]
   end
 
