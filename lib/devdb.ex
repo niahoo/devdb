@@ -15,7 +15,13 @@ defmodule DevDB do
 
   defp start(start_fun, name, opts) do
     opts = Keyword.put(opts, :name, name)
-    repo = make_repo(opts)
+
+    create = fn ->
+      make_repo(opts)
+    end
+
+    opts = [{:value, create} | opts]
+
     apply(SingleLock, start_fun, [opts])
   end
 
@@ -25,6 +31,70 @@ defmodule DevDB do
 
   ## -- --
 
+  alias DevDB.Repo
+
+  def put(db, key, value) when is_pid(db) or is_atom(db) do
+    single_update_command(db, fn repo -> Repo.put(repo, key, value) end)
+  end
+
+  def fetch(db, key) when is_pid(db) or is_atom(db) do
+    single_read_command(db, fn repo -> Repo.fetch(repo, key) end)
+  end
+
+  ## -- --
+
   defp make_repo(opts) do
+    DevDB.Repository.Ets.new(opts)
+  end
+
+  # Here we use only functions from this module, that we know are one-op and act
+  # on the default ETS repo (non-transactional)
+  defp single_update_command(db, fun) when is_pid(db) or is_atom(db) do
+    safe_single_command(db, fn repo ->
+      case fun.(repo) do
+        :ok ->
+          {:reply, :ok}
+
+        {:ok, updated_repo} ->
+          {:reply, :ok, updated_repo}
+
+        {:error, _} = err ->
+          err
+      end
+    end)
+  end
+
+  defp single_read_command(db, fun) when is_pid(db) or is_atom(db) do
+    safe_single_command(db, fn repo ->
+      case fun.(repo) do
+        {:ok, data} -> {:reply, {:ok, data}}
+        {:error, _} = err -> err
+      end
+    end)
+  end
+
+  defp safe_single_command(db, fun) do
+    {:ok, repo} = SingleLock.acquire(db)
+
+    case catch_call(fun, [repo]) do
+      {:reply, reply} ->
+        :ok = SingleLock.release(db)
+        reply
+
+      {:reply, reply, new_repo} ->
+        :ok = SingleLock.release(db, new_repo)
+        reply
+
+      {:error, _} = err ->
+        :ok = SingleLock.release(db)
+        err
+    end
+  end
+
+  defp catch_call(fun, args) do
+    apply(fun, args)
+  rescue
+    e ->
+      {:error, Exception.message(e)}
   end
 end

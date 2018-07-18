@@ -85,6 +85,7 @@ defmodule SingleLock do
       %S{}
       |> set_value(initial_value)
 
+    Logger.debug("SingleLock starting with value = #{inspect(initial_value)}")
     {:ok, state}
   end
 
