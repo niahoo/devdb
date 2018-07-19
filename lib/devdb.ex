@@ -37,6 +37,10 @@ defmodule DevDB do
     single_update_command(db, fn repo -> Repo.put(repo, key, value) end)
   end
 
+  def delete(db, key) when is_pid(db) or is_atom(db) do
+    single_update_command(db, fn repo -> Repo.delete(repo, key) end)
+  end
+
   def fetch(db, key) when is_pid(db) or is_atom(db) do
     single_read_command(db, fn repo -> Repo.fetch(repo, key) end)
   end
@@ -69,6 +73,7 @@ defmodule DevDB do
       case fun.(repo) do
         {:ok, data} -> {:reply, {:ok, data}}
         {:error, _} = err -> err
+        :error -> :error
       end
     end)
   end
@@ -88,6 +93,10 @@ defmodule DevDB do
       {:error, _} = err ->
         :ok = SingleLock.release(db)
         err
+
+      :error = err ->
+        :ok = SingleLock.release(db)
+        :error
     end
   end
 
