@@ -47,6 +47,11 @@ defmodule DevDBTest do
 
     DevDB.put(pid, updated_key, updated_val)
     DevDB.put(pid, deleted_key, deleted_val)
+    DevDB.put(pid, "dummy-1", "dummy val 1")
+    DevDB.put(pid, "dummy-2", "dummy val 2")
+    DevDB.put(pid, "dummy-3", "dummy val 3")
+    DevDB.put(pid, "dummy-4", "dummy val 4")
+    DevDB.put(pid, "dummy-5", "dummy val 5")
 
     retval =
       DevDB.transaction(pid, fn tr_repo ->
@@ -56,8 +61,12 @@ defmodule DevDBTest do
         assert {:ok, deleted_val} = DevDB.fetch(tr_repo, deleted_key)
         assert :ok = DevDB.delete(tr_repo, deleted_key)
 
-        # Updating a value existing before the transaction
+        # Updating a value existing before the transaction. We put two different
+        # values inside, so in a rollback we must retrieve the original value,
+        # not the previous one set in transaction.
+        todo("This assert belongs to the rollback test")
         assert {:ok, updated_val} = DevDB.fetch(tr_repo, updated_key)
+        assert :ok = DevDB.put(tr_repo, updated_key, "THIS_SHOULD_BE_FORGOTTEN")
         assert :ok = DevDB.put(tr_repo, updated_key, new_updated_val)
         assert {:ok, new_updated_val} = DevDB.fetch(tr_repo, updated_key)
 
@@ -86,6 +95,8 @@ defmodule DevDBTest do
 
         Process.sleep(100)
 
+        :observer.start()
+        Process.sleep(:infinity)
         {:ok, :some_return}
       end)
 

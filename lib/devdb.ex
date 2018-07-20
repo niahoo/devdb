@@ -67,35 +67,31 @@ defmodule DevDB do
   def transaction(db, fun) when is_pid(db) or is_atom(db) do
     fail_if_in_transaction(fn ->
       call_with_lock(db, fn base_repo ->
-        tr_repo = make_transactional_repo(base_repo)
+        {:ok, tr_repo} = Repo.begin_transaction(base_repo)
 
         # we wrap the transactional repo in a :tr_repo tagged tuple so we can
         # easily pattern match on the single API functions put/fetch/...
 
         IO.puts("BEGIN")
 
-        return =
-          case fun.({:tr_repo, tr_repo}) do
-            {:ok, _} = reply ->
-              IO.puts("COMMIT")
-              commit_transaction(base_repo, tr_repo, reply)
+        case fun.({:tr_repo, tr_repo}) do
+          {:ok, _} = reply ->
+            IO.puts("COMMIT")
+            commit_transaction(base_repo, tr_repo, reply)
 
-            ok_atom when ok_atom in [:ok, :commit] ->
-              IO.puts("COMMIT")
-              commit_transaction(base_repo, tr_repo, :ok)
+          ok_atom when ok_atom in [:ok, :commit] ->
+            IO.puts("COMMIT")
+            commit_transaction(base_repo, tr_repo, :ok)
 
-            {:error, _} = err ->
-              IO.puts("ROLLBACK")
-              rollback_transaction(base_repo, tr_repo, err)
+          {:error, _} = err ->
+            IO.puts("ROLLBACK")
+            rollback_transaction(base_repo, tr_repo, err)
 
-            :error ->
-              IO.puts("ROLLBACK")
-              rollback_transaction(base_repo, tr_repo, :error)
-              :error
-          end
-
-        IO.puts("END")
-        return
+          :error ->
+            IO.puts("ROLLBACK")
+            rollback_transaction(base_repo, tr_repo, :error)
+            :error
+        end
       end)
     end)
   end
@@ -106,14 +102,6 @@ defmodule DevDB do
 
   defp make_repo(opts) do
     DevDB.Repository.Ets.new(opts)
-  end
-
-  @todo """
-  Here we must inform the database that the transactional repository is able to
-  commit the modifications and that willact on the state of the base repository.
-  """
-  defp make_transactional_repo(%DevDB.Repository.Ets{tab: tab}) do
-    DevDB.Repository.Ets.Transaction.new(tab)
   end
 
   # Here we use only functions from this module, that we know are one-op and act
@@ -138,37 +126,18 @@ defmodule DevDB do
     end)
   end
 
-  def commit_transaction(base_repo, tr_repo, reply) do
-    # Strategies :
-    #
-    # - Let the tr_repo do the commit, returning only updates informations to
-    #   transfer this information to the backend. This could be a lot of
-    #   information to transfer, so we could also stream the information to the
-    #   backend.
-    #
-    # - Have the tr_repo cleanup all what it changed (deleting inserted
-    #   entries), but again we must retrieve all changed data records and stream
-    #   them to the backend.
-    #
-    # In case of the first strategy, the ets.repository is aware that another
-    # repository can change its data.
-
-    {:ok, updates} = Repo.get_commit_updates(tr_repo)
-    # Here we just forget, the transactional repository, it must be
-    # garbage collected
-    case Repo.apply_updates(base_repo, updates) do
+  @todo "here give the backend to apply updates too. use replicates or pubsub."
+  defp commit_transaction(base_repo, tr_repo, reply) do
+    case Repo.commit_transaction(tr_repo) do
       {:ok, new_base_repo} ->
-        Repo.cleanup_transaction(tr_repo)
-        {:reply, {:ok, reply}, new_base_repo}
+        {:reply, reply, new_base_repo}
 
-      err ->
-        raise "Could not commit the transaction, updates = #{inspect(updates)}, err: #{
-                inspect(err)
-              }"
+      {:error, err} ->
+        raise "Could not commit the transaction, err: #{inspect(err)}"
     end
   end
 
-  def rollback_transaction(_base_repo, tr_repo, error) do
+  defp rollback_transaction(_base_repo, tr_repo, error) do
     Logger.error(error)
     :ok = Repo.rollback(tr_repo)
     {:error, error}
@@ -177,6 +146,7 @@ defmodule DevDB do
   # Single command is working on a non-transact repository : get the repo,
   # execute the fun (which could have multiple actions btw since were are
   # isolated) and send back the repo. No concept of commit/rollback here.
+
   defp call_with_lock(db, fun) do
     {:ok, repo} = SingleLock.acquire(db)
 
@@ -225,7 +195,6 @@ defmodule DevDB do
   defp catch_call(fun, args) do
     apply(fun, args)
   rescue
-    e ->
-      {:error, Exception.message(e)}
+    e -> {:error, Exception.message(e)}
   end
 end
