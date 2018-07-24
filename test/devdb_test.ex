@@ -175,7 +175,8 @@ defmodule DevDBTest do
 
   defp assert_select(store, selector, expected_keys) do
     expected_keys = Enum.sort(expected_keys)
-    {:ok, select_result} = DevDB.select(store, selector)
+    result = DevDB.select(store, selector)
+    {:ok, select_result} = result
 
     found_keys =
       select_result
@@ -199,15 +200,30 @@ defmodule DevDBTest do
   test "select in transaction" do
     pid = start_db!(@db1)
 
-    DevDB.put(pid, "key-1", 5)
-    DevDB.put(pid, "key-2", 10)
-    DevDB.put(pid, "key-3", 15)
-    DevDB.put(pid, "key-4", 20)
-    DevDB.put(pid, "key-5", 25)
+    DevDB.put(pid, "key-1", 100)
+    DevDB.put(pid, "key-2", 100)
+    DevDB.put(pid, "key-3", 200)
+    DevDB.put(pid, "key-4", 200)
+    DevDB.put(pid, "key-5", 500)
 
     DevDB.transaction(pid, fn tr_repo ->
       assert_select(tr_repo, fn val, _key -> val > 100 end, ["key-3", "key-4", "key-5"])
+      DevDB.put(tr_repo, "key-5", 0)
+      assert_select(tr_repo, fn val, _key -> val > 100 end, ["key-3", "key-4"])
+      :rollback
     end)
+
+    assert_select(pid, fn val, _key -> val > 100 end, ["key-3", "key-4", "key-5"])
+
+    DevDB.transaction(pid, fn tr_repo ->
+      assert_select(tr_repo, fn val, _key -> val > 100 end, ["key-3", "key-4", "key-5"])
+      DevDB.put(tr_repo, "key-4", 0)
+      DevDB.put(tr_repo, "key-6", 600)
+      assert_select(tr_repo, fn val, _key -> val > 100 end, ["key-3", "key-5", "key-6"])
+      :commit
+    end)
+
+    assert_select(pid, fn val, _key -> val > 100 end, ["key-3", "key-5", "key-6"])
   end
 
   @todo ~S(test "put/delete/shutdown/fetch" do)

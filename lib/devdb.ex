@@ -1,6 +1,6 @@
 defmodule DevDB do
   require Logger
-  alias DevDB.Repository, as: Repo
+  alias DevDB.Repo
   # A database is simply a SingleLock process whose value is a repository
   # configuration with an ETS table. The SingleLock process holds the table.
   # Acquiring the lock is the default way of acting on the table, so this allows

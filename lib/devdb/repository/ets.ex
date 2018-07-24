@@ -24,6 +24,7 @@ defmodule DevDB.Repository.Ets.Entry do
 end
 
 defmodule DevDB.Repository.Ets do
+  require Logger
   alias :ets, as: Ets
   defstruct tab: nil
   alias DevDB.Repository.Ets.Entry
@@ -57,28 +58,43 @@ defmodule DevDB.Repository.Ets do
     end
   end
 
-  # For now, the select system is very naive and so very slow, the user provides
-  # a fn/2 accepting value and key (in this order), and returns true or false to
-  # include or not the record in the selection. We do a full table scan and call
-  # tu fun on every value in the table.
-  def select(this, filter) when is_function(filter, 1) do
-    filter_without_key = fn val, _key -> filter.(val) end
-    select(this, filter_without_key)
-  end
+  def ets_filter_entries(tab, get_selectables, filter) do
+    reducer = fn entry, acc ->
+      case get_selectables.(entry) do
+        :ignore ->
+          acc
 
-  def select(%{tab: tab}, filter) when is_function(filter, 2) do
-    initial_selection = []
-
-    filter_entry = fn db_entry(key: key, value: value), acc ->
-      if filter.(value, key) do
-        [{key, value} | acc]
-      else
-        acc
+        {key, value} ->
+          if filter.(value, key) do
+            [{key, value} | acc]
+          else
+            acc
+          end
       end
     end
 
+    Ets.foldl(reducer, [], tab)
+  end
+
+  # For now, the select system is very naive and so very slow, the user provides
+  # a fn/2 accepting value and key (in this order), and returns true or false to
+  # include or not the record in the selection. We do a full table scan and call
+  # the fun on every value in the table.
+  def select(%{tab: tab}, filter) when is_function(filter, 2) do
+    initial_selection = []
+
+    get_selectables = fn
+      db_entry(key: key, value: value) ->
+        {key, value}
+
+      # catch all if we implement sequences or stuff that requires rows
+      other ->
+        Logger.warn("Selection against unknown entry format : #{inspect(other)}")
+        :ignore
+    end
+
     try do
-      {:ok, Ets.foldl(filter_entry, initial_selection, tab)}
+      {:ok, ets_filter_entries(tab, get_selectables, filter)}
     rescue
       e ->
         {:error, Exception.message(e)}
@@ -96,9 +112,11 @@ defmodule DevDB.Repository.Ets do
 end
 
 defmodule DevDB.Repository.Ets.Transaction do
+  require Logger
   alias :ets, as: Ets
   defstruct tab: nil, ref: nil
   import DevDB.Repository.Ets.Entry
+  alias DevDB.Repository.Ets, as: Parent
 
   def new(opts) do
     tab = Keyword.fetch!(opts, :tab)
@@ -123,6 +141,36 @@ defmodule DevDB.Repository.Ets.Transaction do
     case Ets.lookup(tab, key) do
       [rec] -> {:ok, rec}
       [] -> :no_record
+    end
+  end
+
+  def select(%{tab: tab, ref: ref}, filter) when is_function(filter, 2) do
+    initial_selection = []
+
+    get_selectables = fn
+      db_entry(key: key, trval: {^ref, :deleted_value}) ->
+        :ignore
+
+      db_entry(key: key, trval: {^ref, :updated_value, value}) ->
+        {key, value}
+
+      db_entry(key: key, value: value, trval: nil) ->
+        {key, value}
+
+      # catch all if we implement sequences or stuff that requires rows
+      other ->
+        Logger.warn("Selection against unknown entry format : #{inspect(other)}")
+        :ignore
+    end
+
+    try do
+      {:ok, Parent.ets_filter_entries(tab, get_selectables, filter)}
+    rescue
+      e ->
+        {:error, Exception.message(e)}
+    catch
+      :throw, e ->
+        {:error, e}
     end
   end
 
@@ -191,7 +239,7 @@ defmodule DevDB.Repository.Ets.Transaction do
 
   def commit_transaction(%{tab: tab, ref: ref} = this) do
     foreach_current_transient_object(this, {__MODULE__, :commit_entry, []})
-    new_nontransactional_repo = DevDB.Repository.Ets.new(tab: tab)
+    new_nontransactional_repo = Parent.new(tab: tab)
     {:ok, new_nontransactional_repo}
   end
 
@@ -217,7 +265,7 @@ defmodule DevDB.Repository.Ets.Transaction do
 
   def rollback_transaction(%{tab: tab, ref: ref} = this) do
     foreach_current_transient_object(this, {__MODULE__, :rollback_entry, []})
-    new_nontransactional_repo = DevDB.Repository.Ets.new(tab: tab)
+    new_nontransactional_repo = Parent.new(tab: tab)
     {:ok, new_nontransactional_repo}
   end
 
@@ -258,6 +306,7 @@ defimpl DevDB.Repository, for: DevDB.Repository.Ets.Transaction do
   defdelegate put(repo, key, value), to: DevDB.Repository.Ets.Transaction
   defdelegate delete(repo, key), to: DevDB.Repository.Ets.Transaction
   defdelegate fetch(repo, key), to: DevDB.Repository.Ets.Transaction
+  defdelegate select(repo, filter), to: DevDB.Repository.Ets.Transaction
   defdelegate commit_transaction(repo), to: DevDB.Repository.Ets.Transaction
   defdelegate rollback_transaction(repo), to: DevDB.Repository.Ets.Transaction
 
