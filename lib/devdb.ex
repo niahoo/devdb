@@ -1,5 +1,6 @@
 defmodule DevDB do
   require Logger
+  alias DevDB.Repository, as: Repo
   # A database is simply a SingleLock process whose value is a repository
   # configuration with an ETS table. The SingleLock process holds the table.
   # Acquiring the lock is the default way of acting on the table, so this allows
@@ -32,8 +33,6 @@ defmodule DevDB do
 
   ## -- --
 
-  alias DevDB.Repo
-
   def put(db, key, value) when is_pid(db) or is_atom(db) do
     fail_if_in_transaction(fn ->
       single_update_command(db, fn repo -> Repo.put(repo, key, value) end)
@@ -62,6 +61,17 @@ defmodule DevDB do
 
   def fetch({:tr_repo, repo}, key) do
     Repo.fetch(repo, key)
+  end
+
+  def select(db, filter)
+      when (is_pid(db) or is_atom(db)) and (is_function(filter, 2) or is_function(filter, 1)) do
+    fail_if_in_transaction(fn ->
+      single_read_command(db, fn repo -> Repo.select(repo, filter) end)
+    end)
+  end
+
+  def select({:tr_repo, repo}, filter) do
+    Repo.select(repo, filter)
   end
 
   def transaction(db, fun) when is_pid(db) or is_atom(db) do

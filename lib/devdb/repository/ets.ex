@@ -57,6 +57,37 @@ defmodule DevDB.Repository.Ets do
     end
   end
 
+  # For now, the select system is very naive and so very slow, the user provides
+  # a fn/2 accepting value and key (in this order), and returns true or false to
+  # include or not the record in the selection. We do a full table scan and call
+  # tu fun on every value in the table.
+  def select(this, filter) when is_function(filter, 1) do
+    filter_without_key = fn val, _key -> filter.(val) end
+    select(this, filter_without_key)
+  end
+
+  def select(%{tab: tab}, filter) when is_function(filter, 2) do
+    initial_selection = []
+
+    filter_entry = fn db_entry(key: key, value: value), acc ->
+      if filter.(value, key) do
+        [{key, value} | acc]
+      else
+        acc
+      end
+    end
+
+    try do
+      {:ok, Ets.foldl(filter_entry, initial_selection, tab)}
+    rescue
+      e ->
+        {:error, Exception.message(e)}
+    catch
+      :throw, e ->
+        {:error, e}
+    end
+  end
+
   # When entering a transaction, we simply change our repo data structure for
   # another module with different implementations of each functions.
   def begin_transaction(%{tab: tab}) do
@@ -211,6 +242,7 @@ defimpl DevDB.Repository, for: DevDB.Repository.Ets do
   defdelegate put(repo, key, value), to: DevDB.Repository.Ets
   defdelegate delete(repo, key), to: DevDB.Repository.Ets
   defdelegate fetch(repo, key), to: DevDB.Repository.Ets
+  defdelegate select(repo, filter), to: DevDB.Repository.Ets
   defdelegate begin_transaction(repo), to: DevDB.Repository.Ets
 
   def commit_transaction(_repo) do
