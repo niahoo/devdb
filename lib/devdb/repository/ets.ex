@@ -144,7 +144,6 @@ defmodule DevDB.Repository.Ets.Transaction do
     match_bind =
       match_spec_base()
       |> put_elem(db_entry(:trref), ref)
-      |> IO.inspect()
 
     # |> Enum.reduce(this, &commit_entry/2)
     Ets.match_object(tab, match_bind)
@@ -153,7 +152,7 @@ defmodule DevDB.Repository.Ets.Transaction do
   defp foreach_current_transient_object(%{tab: tab, ref: ref} = this, {mod, fun, args}) do
     current_transient_objects(this)
     |> Enum.reduce(this, fn entry, that ->
-      IO.puts("Apply #{mod}.#{fun} to #{inspect(entry)}")
+      IO.puts("#{fun} #{inspect(db_entry(entry, :key))}")
       apply(mod, fun, [entry, that | args])
       that
     end)

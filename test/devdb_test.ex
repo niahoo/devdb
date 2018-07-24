@@ -55,8 +55,6 @@ defmodule DevDBTest do
 
     retval =
       DevDB.transaction(pid, fn tr_repo ->
-        IO.puts("in transaction")
-
         # Deleting a value existing before the transaction
         assert {:ok, deleted_val} === DevDB.fetch(tr_repo, deleted_key)
         assert :ok = DevDB.delete(tr_repo, deleted_key)
@@ -77,18 +75,8 @@ defmodule DevDBTest do
 
         assert :error = DevDB.fetch(tr_repo, inserted_key)
 
-        IO.puts(
-          "DevDB.put(#{inspect(tr_repo)}, #{inspect(inserted_key)}, #{inspect(inserted_val)})"
-        )
-
         assert :ok === DevDB.put(tr_repo, inserted_key, inserted_val)
         assert {:ok, inserted_val} === DevDB.fetch(tr_repo, inserted_key)
-
-        tr_repo
-        |> elem(1)
-        |> Map.get(:tab)
-        |> :ets.tab2list()
-        |> IO.inspect(pretty: true)
 
         Process.sleep(100)
 
@@ -122,14 +110,11 @@ defmodule DevDBTest do
 
     retval =
       DevDB.transaction(pid, fn tr_repo ->
-        IO.puts("in transaction")
-
         # Deleting a value existing before the transaction
         assert {:ok, deleted_val} === DevDB.fetch(tr_repo, deleted_key)
         assert :ok === DevDB.delete(tr_repo, deleted_key)
 
         # Updating a value existing before the transaction.
-        todo("This assert belongs to the rollback test")
         assert {:ok, original_val} === DevDB.fetch(tr_repo, updated_key)
         assert :ok === DevDB.put(tr_repo, updated_key, updated_val)
         assert {:ok, updated_val} === DevDB.fetch(tr_repo, updated_key)
@@ -144,18 +129,8 @@ defmodule DevDBTest do
 
         assert :error === DevDB.fetch(tr_repo, inserted_key)
 
-        IO.puts(
-          "DevDB.put(#{inspect(tr_repo)}, #{inspect(inserted_key)}, #{inspect(inserted_val)})"
-        )
-
         assert :ok === DevDB.put(tr_repo, inserted_key, inserted_val)
         assert {:ok, inserted_val} === DevDB.fetch(tr_repo, inserted_key)
-
-        tr_repo
-        |> elem(1)
-        |> Map.get(:tab)
-        |> :ets.tab2list()
-        |> IO.inspect(pretty: true)
 
         Process.sleep(100)
 
@@ -183,19 +158,10 @@ defmodule DevDBTest do
 
     retval =
       DevDB.transaction(pid, fn tr_repo ->
-        IO.puts("in transaction")
-
-        todo("This assert belongs to the rollback test")
         assert {:ok, original_val} === DevDB.fetch(tr_repo, updated_key)
         assert :ok === DevDB.put(tr_repo, updated_key, "THIS_SHOULD_BE_FORGOTTEN")
         assert :ok === DevDB.put(tr_repo, updated_key, updated_val)
         assert {:ok, updated_val} === DevDB.fetch(tr_repo, updated_key)
-
-        tr_repo
-        |> elem(1)
-        |> Map.get(:tab)
-        |> :ets.tab2list()
-        |> IO.inspect(pretty: true)
 
         Process.sleep(100)
 
