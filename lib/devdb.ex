@@ -87,10 +87,9 @@ defmodule DevDB do
             IO.puts("ROLLBACK")
             rollback_transaction(base_repo, tr_repo, err)
 
-          :error ->
+          error_atom when error_atom in [:error, :rollback] ->
             IO.puts("ROLLBACK")
             rollback_transaction(base_repo, tr_repo, :error)
-            :error
         end
       end)
     end)
@@ -137,10 +136,16 @@ defmodule DevDB do
     end
   end
 
-  defp rollback_transaction(_base_repo, tr_repo, error) do
-    Logger.error(error)
-    :ok = Repo.rollback(tr_repo)
-    {:error, error}
+  defp rollback_transaction(_base_repo, tr_repo, reply) do
+    Logger.error("Rollback transaction : #{inspect(reply)}")
+
+    case Repo.rollback_transaction(tr_repo) do
+      {:ok, new_base_repo} ->
+        {:reply, reply, new_base_repo}
+
+      {:error, err} ->
+        raise "Could not commit the transaction, err: #{inspect(err)}"
+    end
   end
 
   # Single command is working on a non-transact repository : get the repo,

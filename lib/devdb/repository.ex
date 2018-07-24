@@ -5,6 +5,7 @@ defprotocol DevDB.Repository do
   def get_commit_updates(repo)
   def begin_transaction(repo)
   def commit_transaction(repo)
+  def rollback_transaction(repo)
 end
 
 defmodule DevDB.Repo do
@@ -14,4 +15,5 @@ defmodule DevDB.Repo do
   defdelegate get_commit_updates(repo), to: DevDB.Repository
   defdelegate begin_transaction(repo), to: DevDB.Repository
   defdelegate commit_transaction(repo), to: DevDB.Repository
+  defdelegate rollback_transaction(repo), to: DevDB.Repository
 end
