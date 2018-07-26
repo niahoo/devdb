@@ -110,7 +110,7 @@ defmodule DevDB do
   ## -- --
 
   defp make_repo(opts) do
-    DevDB.Repository.Ets.new(opts)
+    Repo.new(DevDB.Repository.Ets, opts)
   end
 
   # Here we use only functions from this module, that we know are one-op and act
@@ -119,7 +119,6 @@ defmodule DevDB do
     call_with_lock(db, fn repo ->
       case fun.(repo) do
         :ok -> {:reply, :ok}
-        {:ok, updated_repo} -> {:reply, :ok, updated_repo}
         {:error, _} = err -> err
       end
     end)
