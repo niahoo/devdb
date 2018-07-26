@@ -87,19 +87,19 @@ defmodule DevDB do
         case fun.({:tr_repo, tr_repo}) do
           {:ok, _} = reply ->
             IO.puts("COMMIT")
-            commit_transaction(base_repo, tr_repo, reply)
+            commit_transaction(tr_repo, reply)
 
           ok_atom when ok_atom in [:ok, :commit] ->
             IO.puts("COMMIT")
-            commit_transaction(base_repo, tr_repo, :ok)
+            commit_transaction(tr_repo, :ok)
 
           {:error, _} = err ->
             IO.puts("ROLLBACK")
-            rollback_transaction(base_repo, tr_repo, err)
+            rollback_transaction(tr_repo, err)
 
           error_atom when error_atom in [:error, :rollback] ->
             IO.puts("ROLLBACK")
-            rollback_transaction(base_repo, tr_repo, :error)
+            rollback_transaction(tr_repo, :error)
         end
       end)
     end)
@@ -136,7 +136,7 @@ defmodule DevDB do
   end
 
   @todo "here give the backend to apply updates too. use replicates or pubsub."
-  defp commit_transaction(base_repo, tr_repo, reply) do
+  defp commit_transaction(tr_repo, reply) do
     case Repo.commit_transaction(tr_repo) do
       {:ok, new_base_repo} ->
         {:reply, reply, new_base_repo}
@@ -146,7 +146,7 @@ defmodule DevDB do
     end
   end
 
-  defp rollback_transaction(_base_repo, tr_repo, reply) do
+  defp rollback_transaction(tr_repo, reply) do
     Logger.error("Rollback transaction : #{inspect(reply)}")
 
     case Repo.rollback_transaction(tr_repo) do

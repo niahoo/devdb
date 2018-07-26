@@ -230,10 +230,9 @@ defmodule DevDB.Repository.Ets.Transaction do
 
   defp foreach_current_transient_object(%{tab: tab, ref: ref} = this, {mod, fun, args}) do
     current_transient_objects(this)
-    |> Enum.reduce(this, fn entry, that ->
+    |> Enum.map_reduce(this, fn entry, acc ->
       IO.puts("#{fun} #{inspect(db_entry(entry, :key))}")
-      apply(mod, fun, [entry, that | args])
-      that
+      {apply(mod, fun, [entry, acc | args]), acc}
     end)
   end
 
