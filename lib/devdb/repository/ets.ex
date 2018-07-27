@@ -1,32 +1,11 @@
-defmodule DevDB.Repository.Ets.Entry do
-  require Record
-  use TODO
-  @todo "Remove ref entry as it is used in values ? But it's useful to match everything at once"
-  Record.defrecord(:db_entry, key: nil, value: nil, trref: nil, trval: nil, trinserted: false)
-
-  def match_spec_base() do
-    db_entry(key: :_, value: :_, trref: :_, trval: :_, trinserted: :_)
-  end
-
-  # If in a transaction we delete a record, this value will be put in the :trval
-  # field, showing that this record should be ignored
-  def deleted_value(ref), do: {ref, :deleted_value}
-
-  # In case we operate a dirty read on a table where a transaction is in
-  # progress, and in this transaction we inserted a value (in the :trval field),
-  # the :value field of the record has not an actual value yet, so it will be
-  # set to @inserted_value.
-  def inserted_value(ref), do: {ref, :inserted_value}
-
-  # Indicates that a new value has been inserted for this record in this
-  # transaction
-  def updated_value(value, ref), do: {ref, :updated_value, value}
-end
-
 defmodule DevDB.Repository.Ets do
   require Logger
   alias :ets, as: Ets
-  defstruct tab: nil
+  @todo "Add backend configuration, tab2file autodump, etc..."
+  defstruct tab: nil,
+            # current transaction reference
+            ctrref: nil
+
   alias DevDB.Repository.Ets.Entry
   import Entry
 
@@ -34,27 +13,27 @@ defmodule DevDB.Repository.Ets do
     Ets.new(name, [:set, {:keypos, db_entry(:key) + 1} | opts])
   end
 
-  def new(opts) do
-    tab =
-      case Keyword.fetch(opts, :tab) do
-        {:ok, ref} when is_reference(ref) ->
-          ref
-      end
+  @m __MODULE__
 
-    %__MODULE__{tab: tab}
+  def new() do
+    %@m{}
   end
 
-  def put(%{tab: tab}, key, value) do
+  def accept_table(this, tab) when is_reference(tab) do
+    %@m{this | tab: tab}
+  end
+
+  def put(%@m{tab: tab}, key, value) do
     true = Ets.insert(tab, [db_entry(key: key, value: value)])
     :ok
   end
 
-  def delete(%{tab: tab}, key) do
+  def delete(%@m{tab: tab}, key) do
     true = Ets.delete(tab, key)
     :ok
   end
 
-  def fetch(%{tab: tab}, key) do
+  def fetch(%@m{tab: tab}, key) do
     case Ets.lookup(tab, key) do
       [db_entry(key: key, value: {_, :inserted_value})] -> :error
       [db_entry(key: key, value: value)] -> {:ok, value}
@@ -62,9 +41,11 @@ defmodule DevDB.Repository.Ets do
     end
   end
 
-  def ets_filter_entries(tab, get_selectables, filter) do
+  # pre_filter_transform must transform an entry in {key, value} to be given to
+  # the filter, or to :ignore to be filtered out.
+  defp ets_filter_entries(tab, pre_filter_transform, filter) do
     reducer = fn entry, acc ->
-      case get_selectables.(entry) do
+      case pre_filter_transform.(entry) do
         :ignore ->
           acc
 
@@ -84,10 +65,10 @@ defmodule DevDB.Repository.Ets do
   # a fn/2 accepting value and key (in this order), and returns true or false to
   # include or not the record in the selection. We do a full table scan and call
   # the fun on every value in the table.
-  def select(%{tab: tab}, filter) when is_function(filter, 2) do
+  def select(%@m{tab: tab}, filter) when is_function(filter, 2) do
     initial_selection = []
 
-    get_selectables = fn
+    pre_filter_transform = fn
       db_entry(key: key, value: value) ->
         {key, value}
 
@@ -98,7 +79,7 @@ defmodule DevDB.Repository.Ets do
     end
 
     try do
-      {:ok, ets_filter_entries(tab, get_selectables, filter)}
+      {:ok, ets_filter_entries(tab, pre_filter_transform, filter)}
     rescue
       e ->
         {:error, Exception.message(e)}
@@ -108,27 +89,15 @@ defmodule DevDB.Repository.Ets do
     end
   end
 
+  ## -- Transactional part ----------------------------------------------------
+
   # When entering a transaction, we simply change our repo data structure for
   # another module with different implementations of each functions.
-  def begin_transaction(%{tab: tab}) do
-    {:ok, DevDB.Repository.Ets.Transaction.new(tab: tab)}
-  end
-end
-
-defmodule DevDB.Repository.Ets.Transaction do
-  require Logger
-  alias :ets, as: Ets
-  defstruct tab: nil, ref: nil
-  import DevDB.Repository.Ets.Entry
-  alias DevDB.Repository.Ets, as: Parent
-
-  def new(opts) do
-    tab = Keyword.fetch!(opts, :tab)
-    tr_reference = make_ref()
-    %__MODULE__{tab: tab, ref: tr_reference}
+  def begin_transaction(%@m{tab: tab, ctrref: nil} = this) do
+    {:ok, %{this | ctrref: make_ref()}}
   end
 
-  def fetch(%{tab: tab, ref: ref}, key) do
+  def tr_fetch(%@m{tab: tab, ctrref: ref}, key) do
     case Ets.lookup(tab, key) do
       [db_entry(key: key, trref: ^ref, trval: {^ref, :updated_value, new_value})] ->
         {:ok, new_value}
@@ -141,17 +110,10 @@ defmodule DevDB.Repository.Ets.Transaction do
     end
   end
 
-  def fetch_entry(tab, key) do
-    case Ets.lookup(tab, key) do
-      [rec] -> {:ok, rec}
-      [] -> :no_record
-    end
-  end
-
-  def select(%{tab: tab, ref: ref}, filter) when is_function(filter, 2) do
+  def tr_select(%@m{tab: tab, ctrref: ref}, filter) when is_function(filter, 2) do
     initial_selection = []
 
-    get_selectables = fn
+    pre_filter_transform = fn
       db_entry(key: key, trval: {^ref, :deleted_value}) ->
         :ignore
 
@@ -168,7 +130,7 @@ defmodule DevDB.Repository.Ets.Transaction do
     end
 
     try do
-      {:ok, Parent.ets_filter_entries(tab, get_selectables, filter)}
+      {:ok, ets_filter_entries(tab, pre_filter_transform, filter)}
     rescue
       e ->
         {:error, Exception.message(e)}
@@ -178,7 +140,24 @@ defmodule DevDB.Repository.Ets.Transaction do
     end
   end
 
-  def put(this = %{tab: tab, ref: ref}, key, value) do
+  def tr_delete(%@m{tab: tab, ctrref: ref} = this, key) do
+    case fetch_entry(tab, key) do
+      :no_record ->
+        # nothing to delete
+        :ok
+
+      {:ok, db_entry(trval: {^ref, :deleted_value})} ->
+        # already deleted
+        :ok
+
+      {:ok, entry} ->
+        new_entry = db_entry(entry, trref: ref, trval: deleted_value(ref))
+        true = Ets.insert(tab, [new_entry])
+        :ok
+    end
+  end
+
+  def tr_put(this = %@m{tab: tab, ctrref: ref}, key, value) do
     # We will put the data in the :trval field of the record, not in the actual
     # value. If the key doesn't exist, we must keep this information in order to
     # remove the record instead of just cleaning the transaction value.
@@ -206,24 +185,7 @@ defmodule DevDB.Repository.Ets.Transaction do
     :ok
   end
 
-  def delete(%{tab: tab, ref: ref} = this, key) do
-    case fetch_entry(tab, key) do
-      :no_record ->
-        # nothing to delete
-        :ok
-
-      {:ok, db_entry(trval: {^ref, :deleted_value})} ->
-        # already deleted
-        :ok
-
-      {:ok, entry} ->
-        new_entry = db_entry(entry, trref: ref, trval: deleted_value(ref))
-        true = Ets.insert(tab, [new_entry])
-        :ok
-    end
-  end
-
-  defp current_transient_objects(%{tab: tab, ref: ref} = this) do
+  defp current_transient_objects(%@m{tab: tab, ctrref: ref} = this) do
     match_bind =
       match_spec_base()
       |> put_elem(db_entry(:trref), ref)
@@ -232,73 +194,71 @@ defmodule DevDB.Repository.Ets.Transaction do
     Ets.match_object(tab, match_bind)
   end
 
-  defp foreach_current_transient_object(%{tab: tab, ref: ref} = this, {mod, fun, args}) do
+  defp foreach_current_transient_object(%@m{tab: tab, ctrref: ref} = this, fun) do
     current_transient_objects(this)
     |> Enum.map_reduce(this, fn entry, acc ->
-      IO.puts("#{fun} #{inspect(db_entry(entry, :key))}")
-      {apply(mod, fun, [entry, acc | args]), acc}
+      {apply(fun, [entry, acc]), acc}
     end)
   end
 
-  def commit_transaction(%{tab: tab, ref: ref} = this) do
-    foreach_current_transient_object(this, {__MODULE__, :commit_entry, []})
-    new_nontransactional_repo = Parent.new(tab: tab)
-    {:ok, new_nontransactional_repo}
+  def commit_transaction(%@m{tab: tab, ctrref: ref} = this) when is_reference(ref) do
+    foreach_current_transient_object(this, fn entry, thisp ->
+      IO.puts("commit entry #{inspect(db_entry(entry, :key))}")
+      commit_entry(entry, thisp)
+    end)
+
+    :ok
+  end
+
+  def rollback_transaction(%@m{tab: tab, ctrref: ref} = this) do
+    foreach_current_transient_object(this, fn entry, thisp ->
+      IO.puts("rollback entry #{inspect(db_entry(entry, :key))}")
+      rollback_entry(entry, thisp)
+    end)
+
+    :ok
+  end
+
+  defp fetch_entry(tab, key) do
+    case Ets.lookup(tab, key) do
+      [rec] -> {:ok, rec}
+      [] -> :no_record
+    end
   end
 
   # Commit an update or an insert : we just migrate the value from the :trval
   # field to the :value field.
-  def commit_entry(
-        db_entry(trval: {ref, :updated_value, value}) = entry,
-        %{tab: tab, ref: ref} = acc
-      ) do
+  defp commit_entry(
+         db_entry(trval: {ref, :updated_value, value}) = entry,
+         %@m{tab: tab, ctrref: ref} = acc
+       ) do
     entry = db_entry(entry, value: value, trref: nil, trval: nil, trinserted: false)
     Ets.insert(tab, entry)
     acc
   end
 
   # Commit a deletion : we delete the record from the ETS table.
-  def commit_entry(
-        db_entry(key: key, trval: {ref, :deleted_value}) = entry,
-        %{tab: tab, ref: ref} = acc
-      ) do
+  defp commit_entry(
+         db_entry(key: key, trval: {ref, :deleted_value}) = entry,
+         %@m{tab: tab, ctrref: ref} = acc
+       ) do
     Ets.delete(tab, key)
     acc
   end
 
-  def rollback_transaction(%{tab: tab, ref: ref} = this) do
-    foreach_current_transient_object(this, {__MODULE__, :rollback_entry, []})
-    new_nontransactional_repo = Parent.new(tab: tab)
-    {:ok, new_nontransactional_repo}
-  end
-
   # Rolling back an inserted entry
-  def rollback_entry(
-        db_entry(key: key, value: {ref, :inserted_value}),
-        %{tab: tab, ref: ref} = acc
-      ) do
+  defp rollback_entry(
+         db_entry(key: key, value: {ref, :inserted_value}),
+         %@m{tab: tab, ctrref: ref} = acc
+       ) do
     Ets.delete(tab, key)
     acc
   end
 
   # Rolling back a deleted or updated value, we just cleanup the record
-  def rollback_entry(entry, %{tab: tab, ref: ref} = acc) do
+  defp rollback_entry(entry, %@m{tab: tab, ctrref: ref} = acc) do
     entry = db_entry(entry, trref: nil, trval: nil, trinserted: false)
     Ets.insert(tab, entry)
     acc
   end
-end
-
-defimpl DevDB.Repository, for: DevDB.Repository.Ets do
-  defdelegate put(repo, key, value), to: DevDB.Repository.Ets
-  defdelegate delete(repo, key), to: DevDB.Repository.Ets
-  defdelegate fetch(repo, key), to: DevDB.Repository.Ets
-  defdelegate select(repo, filter), to: DevDB.Repository.Ets
-end
-
-defimpl DevDB.Repository, for: DevDB.Repository.Ets.Transaction do
-  defdelegate put(repo, key, value), to: DevDB.Repository.Ets.Transaction
-  defdelegate delete(repo, key), to: DevDB.Repository.Ets.Transaction
-  defdelegate fetch(repo, key), to: DevDB.Repository.Ets.Transaction
-  defdelegate select(repo, filter), to: DevDB.Repository.Ets.Transaction
 end

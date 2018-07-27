@@ -90,7 +90,6 @@ defmodule DevDBTest do
     assert {:ok, :some_return} = retval
   end
 
-  @tag :skip
   test "transaction/rollback" do
     pid = start_db!(@db1)
     deleted_key = "delme"
@@ -145,7 +144,6 @@ defmodule DevDBTest do
     assert {:error, :rolled_back_custom_error_return} === retval
   end
 
-  @tag :skip
   test "transaction/rollback-double-update" do
     # During the transaction, we update a same value twice. After the rollback,
     # the original value should be there, and not the value before the last put
@@ -188,7 +186,6 @@ defmodule DevDBTest do
     assert expected_keys === found_keys
   end
 
-  @tag :skip
   test "simple select" do
     pid = start_db!(@db1)
 
@@ -200,7 +197,6 @@ defmodule DevDBTest do
     assert_select(pid, fn val, _key -> val > 100 end, ["key-3", "key-4", "key-5"])
   end
 
-  @tag :skip
   test "select in transaction" do
     pid = start_db!(@db1)
 

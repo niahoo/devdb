@@ -1,6 +1,6 @@
 defmodule DevDB do
   require Logger
-  alias DevDB.Repo
+  alias DevDB.Repository.Ets, as: Repo
 
   def start_link(name, opts \\ []) do
     start(:start_link, name, opts)
@@ -21,10 +21,10 @@ defmodule DevDB do
 
     # As metadata we give the module we want to use with the ets table, its
     # specific options, and the options for the repository like backend,
-    metadata = {DevDB.Repository.Ets, []}
+    repository = DevDB.Repository.Ets.new()
 
     broker_opts = [
-      meta: metadata,
+      meta: repository,
       create_table: create_table
     ]
 
@@ -46,7 +46,7 @@ defmodule DevDB do
   end
 
   def put({:tr_repo, repo}, key, value) do
-    Repo.put(repo, key, value)
+    Repo.tr_put(repo, key, value)
   end
 
   def delete(db, key) when is_pid(db) or is_atom(db) do
@@ -56,7 +56,7 @@ defmodule DevDB do
   end
 
   def delete({:tr_repo, repo}, key) do
-    Repo.delete(repo, key)
+    Repo.tr_delete(repo, key)
   end
 
   def fetch(db, key) when is_pid(db) or is_atom(db) do
@@ -66,7 +66,7 @@ defmodule DevDB do
   end
 
   def fetch({:tr_repo, repo}, key) do
-    Repo.fetch(repo, key)
+    Repo.tr_fetch(repo, key)
   end
 
   def select(db, filter)
@@ -77,7 +77,7 @@ defmodule DevDB do
   end
 
   def select({:tr_repo, repo}, filter) do
-    Repo.select(repo, filter)
+    Repo.tr_select(repo, filter)
   end
 
   def transaction(db, fun) when is_pid(db) or is_atom(db) do
@@ -85,8 +85,11 @@ defmodule DevDB do
       call_with_repo(db, fn base_repo ->
         {:ok, tr_repo} = Repo.begin_transaction(base_repo)
 
-        # we wrap the transactional repo in a :tr_repo tagged tuple so we can
+        # We wrap the transactional repo in a :tr_repo tagged tuple so we can
         # easily pattern match on the single API functions put/fetch/...
+
+        # When the transaction is over, the transactional repo is just ditched
+        # and the base_repo remains unchanged.
 
         IO.puts("BEGIN")
 
@@ -137,8 +140,8 @@ defmodule DevDB do
   @todo "here give the backend to apply updates too. use replicates or pubsub."
   defp commit_transaction(tr_repo, reply) do
     case Repo.commit_transaction(tr_repo) do
-      {:ok, new_base_repo} ->
-        {:reply, reply, new_base_repo}
+      :ok ->
+        {:reply, reply}
 
       {:error, err} ->
         raise "Could not commit the transaction, err: #{inspect(err)}"
@@ -149,19 +152,17 @@ defmodule DevDB do
     Logger.error("Rollback transaction : #{inspect(reply)}")
 
     case Repo.rollback_transaction(tr_repo) do
-      {:ok, new_base_repo} ->
-        {:reply, reply, new_base_repo}
+      :ok ->
+        {:reply, reply}
 
       {:error, err} ->
         raise "Could not commit the transaction, err: #{inspect(err)}"
     end
   end
 
-  # We borrow the table, make a repo, call the fun with it. It can crash the
-  # table.
   defp call_with_repo(db, fun) do
-    EtsBroker.borrow(db, fn tab, ets_compatible_repo_module ->
-      repo = Repo.new(ets_compatible_repo_module, tab: tab)
+    EtsBroker.borrow(db, fn tab, repo ->
+      repo = Repo.accept_table(repo, tab)
 
       case fun.(repo) do
         {:reply, reply} ->
@@ -191,11 +192,5 @@ defmodule DevDB do
     after
       Process.delete(@tr_check)
     end
-  end
-
-  defp catch_call(fun, args) do
-    apply(fun, args)
-  rescue
-    e -> {:error, Exception.message(e)}
   end
 end
