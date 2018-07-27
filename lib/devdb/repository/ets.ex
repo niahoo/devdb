@@ -290,15 +290,6 @@ defimpl DevDB.Repository, for: DevDB.Repository.Ets do
   defdelegate delete(repo, key), to: DevDB.Repository.Ets
   defdelegate fetch(repo, key), to: DevDB.Repository.Ets
   defdelegate select(repo, filter), to: DevDB.Repository.Ets
-  defdelegate begin_transaction(repo), to: DevDB.Repository.Ets
-
-  def commit_transaction(_repo) do
-    {:error, :unsupported}
-  end
-
-  def rollback_transaction(_repo) do
-    {:error, :unsupported}
-  end
 end
 
 defimpl DevDB.Repository, for: DevDB.Repository.Ets.Transaction do
@@ -306,10 +297,4 @@ defimpl DevDB.Repository, for: DevDB.Repository.Ets.Transaction do
   defdelegate delete(repo, key), to: DevDB.Repository.Ets.Transaction
   defdelegate fetch(repo, key), to: DevDB.Repository.Ets.Transaction
   defdelegate select(repo, filter), to: DevDB.Repository.Ets.Transaction
-  defdelegate commit_transaction(repo), to: DevDB.Repository.Ets.Transaction
-  defdelegate rollback_transaction(repo), to: DevDB.Repository.Ets.Transaction
-
-  def begin_transaction(_repo) do
-    {:error, :unsupported}
-  end
 end

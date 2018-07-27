@@ -3,9 +3,6 @@ defprotocol DevDB.Repository do
   def delete(repo, key)
   def fetch(repo, key)
   def select(repo, filter)
-  def begin_transaction(repo)
-  def commit_transaction(repo)
-  def rollback_transaction(repo)
 end
 
 defmodule DevDB.Repo do
@@ -31,19 +28,4 @@ defmodule DevDB.Repo do
   def select(repo, filter), do: DevDB.Repository.select(repo.state, filter)
 
   def delete(repo, key), do: DevDB.Repository.delete(repo.state, key)
-
-  def begin_transaction(repo) do
-    {:ok, new_state} = DevDB.Repository.begin_transaction(repo.state)
-    {:ok, Map.put(repo, :state, new_state)}
-  end
-
-  def commit_transaction(repo) do
-    {:ok, new_state} = DevDB.Repository.commit_transaction(repo.state)
-    {:ok, Map.put(repo, :state, new_state)}
-  end
-
-  def rollback_transaction(repo) do
-    {:ok, new_state} = DevDB.Repository.rollback_transaction(repo.state)
-    {:ok, Map.put(repo, :state, new_state)}
-  end
 end

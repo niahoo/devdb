@@ -46,4 +46,7 @@ defmodule Sidekick do
       ^term -> :ok
     end
   end
+
+  def pid_of(%{other: other}), do: other
+
 end

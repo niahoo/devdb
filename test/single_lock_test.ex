@@ -118,7 +118,7 @@ defmodule SingleLockTest do
     {:ok, sl} = SingleLock.start_link()
     {:ok, agent} = Agent.start_link(fn -> 0 end)
 
-    maxcount = 100
+    maxcount = 50
 
     tasks =
       1..maxcount
@@ -129,6 +129,7 @@ defmodule SingleLockTest do
           # before, all is serialized.
           {:ok, _} = SingleLock.acquire(sl)
           n = Agent.get(agent, fn n -> n end)
+          Process.sleep(100)
           # Note that we do not use the current state of the agent in the update
           # function, because it MUST be what we got in get ! We could also pin
           # the variable.

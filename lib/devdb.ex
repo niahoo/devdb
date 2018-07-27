@@ -76,7 +76,7 @@ defmodule DevDB do
 
   def transaction(db, fun) when is_pid(db) or is_atom(db) do
     fail_if_in_transaction(fn ->
-      call_with_lock(db, fn base_repo ->
+      call_with_repo(db, fn base_repo ->
         {:ok, tr_repo} = Repo.begin_transaction(base_repo)
 
         # we wrap the transactional repo in a :tr_repo tagged tuple so we can
@@ -116,7 +116,7 @@ defmodule DevDB do
   # Here we use only functions from this module, that we know are one-op and act
   # on the default ETS repo (non-transactional)
   defp single_update_command(db, fun) when is_pid(db) or is_atom(db) do
-    call_with_lock(db, fn repo ->
+    call_with_repo(db, fn repo ->
       case fun.(repo) do
         :ok -> {:reply, :ok}
         {:error, _} = err -> err
@@ -125,7 +125,7 @@ defmodule DevDB do
   end
 
   defp single_read_command(db, fun) when is_pid(db) or is_atom(db) do
-    call_with_lock(db, fn repo ->
+    call_with_repo(db, fn repo ->
       case fun.(repo) do
         {:ok, data} -> {:reply, {:ok, data}}
         {:error, _} = err -> err
@@ -161,7 +161,7 @@ defmodule DevDB do
   # execute the fun (which could have multiple actions btw since were are
   # isolated) and send back the repo. No concept of commit/rollback here.
 
-  defp call_with_lock(db, fun) do
+  defp call_with_repo(db, fun) do
     {:ok, repo} = SingleLock.acquire(db)
 
     try do
