@@ -30,11 +30,15 @@ defmodule DevDB.Repository.Ets do
   alias DevDB.Repository.Ets.Entry
   import Entry
 
+  def create_table(name, opts) do
+    Ets.new(name, [:set, {:keypos, db_entry(:key) + 1} | opts])
+  end
+
   def new(opts) do
     tab =
       case Keyword.fetch(opts, :tab) do
-        {:ok, ref} when is_reference(ref) -> ref
-        _ -> Ets.new(__MODULE__, [:public, :set, {:keypos, db_entry(:key) + 1}])
+        {:ok, ref} when is_reference(ref) ->
+          ref
       end
 
     %__MODULE__{tab: tab}

@@ -1,6 +1,11 @@
 defmodule DevDB do
   require Logger
   alias DevDB.Repo
+  # A database is simply a SingleLock process whose value is a repository
+  # configuration with an ETS table. The SingleLock process holds the table.
+  # Acquiring the lock is the default way of acting on the table, so this allows
+  # to serialize complex operations (like selecting, and updating an entity in
+  # an isolated way)
 
   def start_link(name, opts \\ []) do
     start(:start_link, name, opts)
@@ -11,30 +16,19 @@ defmodule DevDB do
   end
 
   defp start(start_fun, name, opts) do
-    # We give the repository to the ets broker so it can be sent to every
-    # client.
-
-    # We are ETS aware : despite the repository is implemented using a protocol
-    # for practical reasons (test and dev), we know that the repository type
-    # here is a DevDB.Repository.Ets. So we use it to create the table.
-    create_table = fn -> DevDB.Repository.Ets.create_table(name, [:private]) end
-
-    # As metadata we give the module we want to use with the ets table, its
-    # specific options, and the options for the repository like backend,
-    metadata = {DevDB.Repository.Ets, []}
-
-    broker_opts = [
-      meta: metadata,
-      create_table: create_table
-    ]
-
     opts = Keyword.put(opts, :name, name)
 
-    apply(EtsBroker, start_fun, [broker_opts])
+    create = fn ->
+      make_repo(opts)
+    end
+
+    opts = [{:value, create} | opts]
+
+    apply(SingleLock, start_fun, [opts])
   end
 
   def stop(db, reason \\ :normal, timeout \\ :infinity) do
-    EtsBroker.stop(db, reason, timeout)
+    SingleLock.stop(db, reason, timeout)
   end
 
   ## -- --
@@ -113,6 +107,12 @@ defmodule DevDB do
 
   ## -- --
 
+  ## -- --
+
+  defp make_repo(opts) do
+    Repo.new(DevDB.Repository.Ets, opts)
+  end
+
   # Here we use only functions from this module, that we know are one-op and act
   # on the default ETS repo (non-transactional)
   defp single_update_command(db, fun) when is_pid(db) or is_atom(db) do
@@ -157,23 +157,36 @@ defmodule DevDB do
     end
   end
 
-  # We borrow the table, make a repo, call the fun with it. It can crash the
-  # table.
-  defp call_with_repo(db, fun) do
-    EtsBroker.borrow(db, fn tab, ets_compatible_repo_module ->
-      repo = Repo.new(ets_compatible_repo_module, tab: tab)
+  # Single command is working on a non-transact repository : get the repo,
+  # execute the fun (which could have multiple actions btw since were are
+  # isolated) and send back the repo. No concept of commit/rollback here.
 
+  defp call_with_repo(db, fun) do
+    {:ok, repo} = SingleLock.acquire(db)
+
+    try do
       case fun.(repo) do
         {:reply, reply} ->
+          :ok = SingleLock.release(db)
+          reply
+
+        {:reply, reply, new_repo} ->
+          :ok = SingleLock.release(db, new_repo)
           reply
 
         {:error, _} = err ->
+          :ok = SingleLock.release(db)
           err
 
         :error = err ->
+          :ok = SingleLock.release(db)
           :error
       end
-    end)
+    rescue
+      e ->
+        :ok = SingleLock.release(db)
+        reraise e, System.stacktrace()
+    end
   end
 
   @tr_check {__MODULE__, :in_transaction}

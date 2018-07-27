@@ -8,7 +8,7 @@ end
 defmodule DevDB.Repo do
   defstruct state: nil
 
-  def new(module, opts) do
+  def new(module, opts \\ []) do
     state = module.new(opts)
     %__MODULE__{state: state}
   end

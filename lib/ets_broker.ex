@@ -157,12 +157,13 @@ defmodule EtsBroker do
     end
   end
 
-  def loop_await_release(%S{client: {client_pid, mref}} = state) when is_pid(client_pid) do
+  def loop_await_release(%S{client: {client_pid, mref}, tab: tab} = state)
+      when is_pid(client_pid) do
     receive state do
-      {:"ETS-TRANSFER", tab, from, :"HEIR-TRANSFER"} ->
+      {:"ETS-TRANSFER", ^tab, from, :"HEIR-TRANSFER"} ->
         handle_client_terminated(state, from)
 
-      {:"ETS-TRANSFER", tab, _from, :RELEASE} ->
+      {:"ETS-TRANSFER", ^tab, _from, :RELEASE} ->
         state
         |> cleanup_lock()
         |> loop_await_client()
