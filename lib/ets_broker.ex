@@ -8,7 +8,7 @@ defmodule EtsBroker.Error do
 end
 
 defmodule EtsBroker do
-  use GenLoop
+  use GenLoop, enter: :init_receive_table
   require Logger
 
   def child_spec(arg) do
@@ -27,15 +27,22 @@ defmodule EtsBroker do
   end
 
   defp start(gen_fun, opts) do
+    # Table creation and seedin happens in the calling process, not in the
+    # broker process.
     arg =
-      Keyword.take(opts, [:meta, :ets_name, :ets_opts, :seed])
+      Keyword.take(opts, [:meta, :create_table, :seed])
       |> Keyword.put_new(:meta, nil)
-      |> Keyword.put_new(:ets_name, __MODULE__)
-      |> Keyword.put_new(:ets_opts, [:set, :private])
+      |> Keyword.put_new(:create_table, fn -> :ets.new(__MODULE__, [:set, :private]) end)
       |> Keyword.put_new(:seed, fn _tab -> :ok end)
 
+    tab = arg[:create_table].()
+    seed_table(tab, arg[:seed])
+
     gen_opts = Keyword.take(opts, [:name])
-    apply(GenLoop, gen_fun, [__MODULE__, arg, gen_opts])
+    {:ok, pid} = apply(GenLoop, gen_fun, [__MODULE__, arg, gen_opts])
+    :ets.setopts(tab, [{:heir, pid, :"HEIR-TRANSFER"}])
+    :ets.give_away(tab, pid, :INITIAL)
+    {:ok, pid}
   end
 
   def stop(sl, reason \\ :normal, timeout \\ :infinity) do
@@ -82,7 +89,20 @@ defmodule EtsBroker do
   end
 
   defp release_table(tab, to_pid) do
-    :ets.give_away(tab, to_pid, :release)
+    :ets.give_away(tab, to_pid, :RELEASE)
+  end
+
+  defp seed_table(tab, seed_fun) when is_function(seed_fun, 1) do
+    seed_fun.(tab)
+  end
+
+  defp seed_table(tab, seed_fun) when is_function(seed_fun) do
+    raise EtsBroker.Error, "EtsBroker initial value cannot be a seed_fun with a non-1 arity"
+  end
+
+  defp seed_table(tab, _other) do
+    # no seed
+    :ok
   end
 
   ## -- server side --
@@ -92,23 +112,11 @@ defmodule EtsBroker do
   end
 
   def init(arg) do
+    # During initialization we do not have the table. we will receive it in
+    # init_receive_table/1
     initial_meta = generate_initial_metadata(arg[:meta])
 
-    tab = :ets.new(arg[:ets_name], arg[:ets_opts])
-    :ets.setopts(tab, [{:heir, self(), :"HEIR-TRANSFER"}])
-
-    case arg[:seed] do
-      seed_fun when is_function(seed_fun, 1) ->
-        seed_fun.(tab)
-
-      seed_fun when is_function(seed_fun) ->
-        raise EtsBroker.Error, "EtsBroker initial value cannot be a seed_fun with a non-1 arity"
-
-      _ ->
-        :ok
-    end
-
-    state = %S{tab: tab, meta: initial_meta}
+    state = %S{meta: initial_meta}
 
     # Logger.debug("EtsBroker starting with meta = #{inspect(initial_meta)}")
     {:ok, state}
@@ -121,8 +129,13 @@ defmodule EtsBroker do
 
   defp generate_initial_metadata(term), do: term
 
-  def enter_loop(state) do
-    loop_await_client(state)
+  def init_receive_table(state) do
+    receive do
+      {:"ETS-TRANSFER", tab, from, :INITIAL} ->
+        state
+        |> Map.put(:tab, tab)
+        |> loop_await_client()
+    end
   end
 
   def loop_await_client(%{client: nil} = state) do
@@ -149,7 +162,7 @@ defmodule EtsBroker do
       {:"ETS-TRANSFER", tab, from, :"HEIR-TRANSFER"} ->
         handle_client_terminated(state, from)
 
-      {:"ETS-TRANSFER", tab, _from, :release} ->
+      {:"ETS-TRANSFER", tab, _from, :RELEASE} ->
         state
         |> cleanup_lock()
         |> loop_await_client()

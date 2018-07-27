@@ -16,6 +16,29 @@ defmodule EtsBrokerTest do
     EtsBroker.stop(pid)
   end
 
+  test "start the table broker with an existing table" do
+    tab = :ets.new(__MODULE__, [])
+    {:ok, pid} = EtsBroker.start_link(create_table: fn -> tab end)
+
+    owner =
+      tab
+      |> :ets.info()
+      |> Keyword.get(:owner)
+
+    assert owner === pid
+
+    EtsBroker.borrow(pid, fn tab, meta ->
+      new_owner =
+        tab
+        |> :ets.info()
+        |> Keyword.get(:owner)
+
+      assert new_owner === self
+    end)
+
+    EtsBroker.stop(pid)
+  end
+
   test "get the initial value" do
     {:ok, pid} = EtsBroker.start_link(meta: :something)
 
