@@ -28,11 +28,14 @@ defmodule EtsBroker do
 
   defp start(gen_fun, opts) do
     arg =
-      Keyword.take(opts, [:meta, :ets_name, :ets_opts, :seed])
+      Keyword.take(opts, [:meta, :ets_name, :ets_opts, :seed, :create_table])
       |> Keyword.put_new(:meta, nil)
       |> Keyword.put_new(:ets_name, __MODULE__)
       |> Keyword.put_new(:ets_opts, [:set, :private])
       |> Keyword.put_new(:seed, fn _tab -> :ok end)
+      |> Keyword.put_new(:create_table, fn arg ->
+        :ets.new(arg[:ets_name], arg[:ets_opts])
+      end)
 
     gen_opts = Keyword.take(opts, [:name])
     apply(GenLoop, gen_fun, [__MODULE__, arg, gen_opts])
@@ -94,7 +97,7 @@ defmodule EtsBroker do
   def init(arg) do
     initial_meta = generate_initial_metadata(arg[:meta])
 
-    tab = :ets.new(arg[:ets_name], arg[:ets_opts])
+    tab = arg[:create_table].(arg)
     :ets.setopts(tab, [{:heir, self(), :"HEIR-TRANSFER"}])
 
     case arg[:seed] do
