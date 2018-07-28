@@ -50,7 +50,6 @@ defimpl DevDB.Repository.Store, for: DevDB.Repository.Ets do
       match_spec_base()
       |> put_elem(db_entry(:trref), ref)
 
-    Process.sleep(1000)
     # Unfolding expects one value to be givent at a time, but match_object
     # returns chunks of objects, so we use Stream concat
     Stream.unfold({:spec, match_spec}, fn

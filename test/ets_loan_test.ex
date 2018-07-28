@@ -114,7 +114,6 @@ defmodule EtsBrokerTest do
           # broker loop should wait for our release before lending the table to
           # the parent
           Sidekick.join(sidekick, :child_set_updated)
-          Process.sleep(500)
         end)
 
         # Wait for the parent to tell us to do the crash test
@@ -142,7 +141,6 @@ defmodule EtsBrokerTest do
     receive do
       {:DOWN, ^mref, :process, _, ^exit_reason} ->
         IO.puts("Child crashed successfully :)")
-        Process.sleep(1000)
     end
 
     # once the child has crashed, it must have crashed the table, so we will

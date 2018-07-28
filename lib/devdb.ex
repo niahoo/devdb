@@ -21,14 +21,14 @@ defmodule DevDB do
 
     # As metadata we give the module we want to use with the ets table, its
     # specific options, and the options for the repository like backend,
-    repository = DevDB.Repository.new()
+    {repo_opts, opts} = Keyword.split(opts, [:backend])
+    repository = DevDB.Repository.new(repo_opts)
 
     broker_opts = [
       meta: repository,
-      create_table: create_table
+      create_table: create_table,
+      name: name
     ]
-
-    opts = Keyword.put(opts, :name, name)
 
     apply(EtsBroker, start_fun, [broker_opts])
   end

@@ -1,6 +1,7 @@
 defmodule DevDBTest do
   use ExUnit.Case, async: true
   use TODO, print: :all
+
   @db1 __MODULE__
 
   @dbtores_conf %{

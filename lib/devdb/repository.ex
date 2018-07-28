@@ -12,23 +12,27 @@ defmodule DevDB.Repository do
   @todo "Add backend configuration, tab2file autodump, etc..."
   defstruct main: nil,
             # current transaction reference
-            ctrref: nil
+            ctrref: nil,
+            # backend repository
+            backend: nil
 
   alias DevDB.Repository.Entry
   import Entry
 
   @m __MODULE__
 
-  def new() do
-    %@m{}
+  def new(opts \\ []) do
+    %@m{backend: opts[:backend]}
   end
 
   def set_main_store(this, main) do
     %@m{this | main: main}
   end
 
-  def put(%@m{main: main}, key, value) do
-    :ok = Store.put_entry(main, db_entry(key: key, value: value))
+  def put(%@m{main: main, backend: backend}, key, value) do
+    entry = db_entry(key: key, value: value)
+    :ok = Store.put_entry(main, entry)
+    :ok = if(backend, do: Store.put_entry(backend, entry), else: :aaa)
   end
 
   def delete(%@m{main: main}, key) do
