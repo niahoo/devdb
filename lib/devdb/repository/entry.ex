@@ -1,4 +1,4 @@
-defmodule DevDB.Repository.Ets.Entry do
+defmodule DevDB.Repository.Entry do
   require Record
   use TODO
   @todo "Remove ref entry as it is used in values ? But it's useful to match everything at once"

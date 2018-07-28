@@ -1,6 +1,6 @@
 defmodule DevDB do
   require Logger
-  alias DevDB.Repository.Ets, as: Repo
+  alias DevDB.Repository, as: Repo
 
   def start_link(name, opts \\ []) do
     start(:start_link, name, opts)
@@ -21,7 +21,7 @@ defmodule DevDB do
 
     # As metadata we give the module we want to use with the ets table, its
     # specific options, and the options for the repository like backend,
-    repository = DevDB.Repository.Ets.new()
+    repository = DevDB.Repository.new()
 
     broker_opts = [
       meta: repository,
@@ -162,7 +162,7 @@ defmodule DevDB do
 
   defp call_with_repo(db, fun) do
     EtsBroker.borrow(db, fn tab, repo ->
-      repo = Repo.accept_table(repo, tab)
+      repo = Repo.set_main_store(repo, Repo.Ets.new(tab))
 
       case fun.(repo) do
         {:reply, reply} ->
