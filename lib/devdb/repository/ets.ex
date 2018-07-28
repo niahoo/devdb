@@ -13,10 +13,17 @@ defmodule DevDB.Repository.Ets do
   end
 end
 
+## --
+
+## --
+
+## --
+
 defimpl DevDB.Repository.Store, for: DevDB.Repository.Ets do
   import DevDB.Repository.Entry
   alias :ets, as: Ets
 
+  @match_tr_chunk_size 100
   def put_entry(%{tab: tab}, entry) do
     true = Ets.insert(tab, [entry])
     :ok
@@ -39,11 +46,29 @@ defimpl DevDB.Repository.Store, for: DevDB.Repository.Ets do
   end
 
   def reduce_tr_entries(%{tab: tab}, ref, acc, fun) do
-    match_bind =
+    match_spec =
       match_spec_base()
       |> put_elem(db_entry(:trref), ref)
 
-    Ets.match_object(tab, match_bind)
+    Process.sleep(1000)
+    # Unfolding expects one value to be givent at a time, but match_object
+    # returns chunks of objects, so we use Stream concat
+    Stream.unfold({:spec, match_spec}, fn
+      {:spec, match_spec} ->
+        unfold_match_result(Ets.match_object(tab, match_spec, @match_tr_chunk_size))
+
+      {:cont, continuation} ->
+        unfold_match_result(Ets.match_object(continuation))
+    end)
+    |> Stream.concat()
     |> Enum.reduce(acc, fun)
+  end
+
+  defp unfold_match_result({objects, continuation}) do
+    {objects, {:cont, continuation}}
+  end
+
+  defp unfold_match_result(:"$end_of_table") do
+    nil
   end
 end
