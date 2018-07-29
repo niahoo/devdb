@@ -2,25 +2,83 @@ defmodule DevDBDiskTest do
   use ExUnit.Case, async: true
   use TODO, print: :all
 
-  @dbdisk __MODULE__
+  @dberl __MODULE__
+  @dbsjon __MODULE__.JSON
 
-  @dir_default File.cwd!() |> Path.join("test/stores/db1") |> DevDB.Repository.Disk.reset_dir!()
+  @dir_default File.cwd!()
+               |> Path.join("test/stores/db1-term2bin")
+               |> DevDB.Repository.Disk.reset_dir!()
 
-  @dbtores_conf %{
-    @dbdisk => [backend: DevDB.Repository.Disk.new(dir: @dir_default)]
+  @dir_json File.cwd!()
+            |> Path.join("test/stores/db2-json")
+            |> DevDB.Repository.Disk.reset_dir!()
+
+  @dbs_conf %{
+    @dberl => [backend: DevDB.Repository.Disk.new(dir: @dir_default)],
+    @dbsjon => [
+      backend:
+        DevDB.Repository.Disk.new(
+          dir: @dir_json,
+          codec: [ext: ".json", module: Poison, encode: [pretty: true]]
+        )
+    ]
   }
 
   defp start_db!(db) do
-    conf = Map.get(@dbtores_conf, db)
+    conf = Map.get(@dbs_conf, db)
     {:ok, pid} = DevDB.start_link(db, conf)
     true = is_pid(pid)
     pid
   end
 
   test "put a bunch of k/v in files" do
-    pid = start_db!(@dbdisk)
+    run_kv_inserts_with_store(@dberl, [
+      # Here we are basically unit testing erlang term_to_binary/binary_to_term so
+      # I'll not add much cases
+      {"some-integer", 1_000_000_000_000_000_000_000_000_000_000_000_000_000},
+      {"some-float", 0.123},
+      {"some-nil", nil},
+      {"some-nil-2", []},
+      {"some-null", :null},
+      {"some-float-2", 2.00000005},
+      {"some-complicated", ["some", "values", %{"with" => "stuff"}]},
+      # They key to filename conversion is more complicated !
+      {{:tuple, "key"}, {:tuple, "key"}},
+      {%{map: "key !"}, %{map: "key !"}},
+      {'charlist-key', 'charlist-key'},
+      {:atom, :atom},
+      {true, true},
+      {false, false},
+      {nil, nil}
+    ])
+
+    run_kv_inserts_with_store(@dbsjon, [
+      {"some-integer", 1},
+      {"some-float", 0.123},
+      {"some-float-2", 2.00000005},
+      {"some-complicated", ["some", "values", %{"with" => "stuff"}]}
+      # Json composed terms can only have string keys, so that's all
+    ])
+  end
+
+  defp run_kv_inserts_with_store(store_id, cases) do
+    pid = start_db!(store_id)
     assert is_pid(pid)
 
-    DevDB.put(pid, "my-string-key", ["some", "values", %{"with" => "stuff"}])
+    %DevDB.Repository.Disk{dir: dir, codec: %{mod: mod, ext: ext}} = @dbs_conf[store_id][:backend]
+
+    cases
+    |> Enum.map(fn {key, val} ->
+      DevDB.put(pid, key, val)
+      filename = DevDB.Repository.Disk.key_to_filename(key, ext)
+
+      term =
+        dir
+        |> Path.join(filename)
+        |> File.read!()
+        |> mod.decode!([])
+
+      assert term === val
+    end)
   end
 end

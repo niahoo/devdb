@@ -11,9 +11,8 @@ defmodule DevDB.Repository.Disk do
     dir = opts[:dir]
 
     codec =
-      opts[:codec] ||
-        __MODULE__
-        |> Codec.configure()
+      (opts[:codec] || __MODULE__)
+      |> Codec.configure()
 
     unless File.dir?(dir) do
       raise "Not a directory : #{inspect(dir)}"
@@ -40,8 +39,23 @@ defmodule DevDB.Repository.Disk do
       Logger.debug("Ok.")
     end
 
-    Process.sleep(500)
-    dir
+    # wait_dir_exists sleeps 100 ms
+    second = 10
+    wait_dir_exists(dir, second * 2)
+  end
+
+  defp wait_dir_exists(dir, 0) do
+    raise "Could not create directory #{dir}"
+  end
+
+  defp wait_dir_exists(dir, stop) do
+    if File.dir?(dir) do
+      IO.puts("dir resetted #{dir}")
+      dir
+    else
+      Process.sleep(100)
+      wait_dir_exists(dir, stop - 1)
+    end
   end
 
   def key_to_filename(key, ext) when is_binary(key) do
@@ -54,14 +68,14 @@ defmodule DevDB.Repository.Disk do
 
   def key_to_filename(key, ext) do
     key
-    |> to_string()
+    |> :erlang.term_to_binary()
     |> key_to_filename(ext)
   end
 
   def key_to_filename(key, ext, dir), do: Path.join(dir, key_to_filename(key, ext))
 
   def put(state, key, value) do
-    binary = Codec.encode!(state.codec, [@vtag, key, value])
+    binary = Codec.encode!(state.codec, value)
 
     ext = state.file_ext
     path = key_to_filename(key, ext, state.dir)
@@ -72,9 +86,11 @@ defmodule DevDB.Repository.Disk do
 
   ## -- Codec behaviour
 
-  def encode!(term, _opts), do: :erlang.term_to_binary(term)
+  def encode!(term, _opts), do: encode!(term)
+  def decode!(term, _opts), do: decode!(term)
 
-  def decode!(binary, _opts), do: :erlang.binary_to_term(binary)
+  defdelegate decode!(binary), to: :erlang, as: :binary_to_term
+  defdelegate encode!(binary), to: :erlang, as: :term_to_binary
 end
 
 ## --
@@ -89,12 +105,6 @@ defimpl DevDB.Repository.Store, for: DevDB.Repository.Disk do
   alias DevDB.Repository.Disk
   import Disk
   alias Kvern.Codec
-
-  # As we use a simple list to store data (space efficient and compatible with
-  # XML, JSON, YAML ; and record tuples are not supported with JSON), we add a
-  # simple tag to be sure this is our data. We use an integer because again it's
-  # encodable in most formats.
-  @vtag "Kvern"
 
   # We only use key and value, so we match-out any transactional reference
   def put_entry(state, db_entry(key: key, value: value, trref: nil)) do
