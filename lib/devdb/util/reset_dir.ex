@@ -32,7 +32,7 @@ defmodule DevDB.Util.ResetDir do
   defp wait_dir_exists(dir, should_exist, remain),
     do: wait_dir_exists(dir, File.dir?(dir), should_exist, remain)
 
-  defp wait_dir_exists(dir, should, remain) when remain < 1,
+  defp wait_dir_exists(dir, _, _, remain) when remain < 1,
     do: raise("Could not create directory #{dir}")
 
   defp wait_dir_exists(_, should, should, _) do

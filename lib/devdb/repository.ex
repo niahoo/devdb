@@ -1,7 +1,7 @@
 defmodule DevDB.Repository do
   require Logger
   alias DevDB.Store
-  @todo "Add backend configuration, tab2file autodump, etc..."
+
   defstruct main: nil,
             # current transaction reference
             ctrref: nil,
@@ -33,8 +33,8 @@ defmodule DevDB.Repository do
 
   def fetch(%@m{main: main}, key) do
     case Store.fetch_entry(main, key) do
-      {:ok, db_entry(key: key, value: {_, :inserted_value})} -> :error
-      {:ok, db_entry(key: key, value: value)} -> {:ok, value}
+      {:ok, db_entry(key: ^key, value: {_, :inserted_value})} -> :error
+      {:ok, db_entry(key: ^key, value: value)} -> {:ok, value}
       :error -> :error
     end
   end
@@ -64,8 +64,6 @@ defmodule DevDB.Repository do
   # include or not the record in the selection. We do a full table scan and call
   # the fun on every value in the table.
   def select(%@m{main: main}, filter) when is_function(filter, 2) do
-    initial_selection = []
-
     pre_filter_transform = fn
       db_entry(key: key, value: value) ->
         {key, value}
@@ -97,10 +95,10 @@ defmodule DevDB.Repository do
 
   def tr_fetch(%@m{main: main, ctrref: ref}, key) do
     case Store.fetch_entry(main, key) do
-      {:ok, db_entry(key: key, trref: ^ref, trval: {^ref, :updated_value, new_value})} ->
+      {:ok, db_entry(key: ^key, trref: ^ref, trval: {^ref, :updated_value, new_value})} ->
         {:ok, new_value}
 
-      {:ok, db_entry(key: key, value: value)} ->
+      {:ok, db_entry(key: ^key, value: value)} ->
         {:ok, value}
 
       :error ->
@@ -109,10 +107,8 @@ defmodule DevDB.Repository do
   end
 
   def tr_select(%@m{main: main, ctrref: ref}, filter) when is_function(filter, 2) do
-    initial_selection = []
-
     pre_filter_transform = fn
-      db_entry(key: key, trval: {^ref, :deleted_value}) ->
+      db_entry(trval: {^ref, :deleted_value}) ->
         :ignore
 
       db_entry(key: key, trval: {^ref, :updated_value, value}) ->
@@ -138,7 +134,7 @@ defmodule DevDB.Repository do
     end
   end
 
-  def tr_delete(%@m{main: main, ctrref: ref} = this, key) do
+  def tr_delete(%@m{main: main, ctrref: ref}, key) do
     case Store.fetch_entry(main, key) do
       :error ->
         # nothing to delete
@@ -155,7 +151,7 @@ defmodule DevDB.Repository do
     end
   end
 
-  def tr_put(this = %@m{main: main, ctrref: ref}, key, value) do
+  def tr_put(%@m{main: main, ctrref: ref}, key, value) do
     # We will put the data in the :trval field of the record, not in the actual
     # value. If the key doesn't exist, we must keep this information in order to
     # remove the record instead of just cleaning the transaction value.
@@ -209,33 +205,33 @@ defmodule DevDB.Repository do
 
   # Commit an update or an insert : we just migrate the value from the :trval
   # field to the :value field.
-  defp commit_entry(
-         db_entry(trval: {ref, :updated_value, value}) = entry,
-         %@m{main: main, ctrref: ref} = acc
-       ) do
+  defp commit_entry(db_entry(trval: {ref, :updated_value, value}) = entry, %@m{
+         main: main,
+         ctrref: ref
+       }) do
     entry = db_entry(entry, value: value, trref: nil, trval: nil, trinserted: false)
     :ok = Store.put_entry(main, entry)
   end
 
   # Commit a deletion : we delete the record from the ETS table.
-  defp commit_entry(
-         db_entry(key: key, trval: {ref, :deleted_value}) = entry,
-         %@m{main: main, ctrref: ref} = acc
-       ) do
+  defp commit_entry(db_entry(key: key, trval: {ref, :deleted_value}), %@m{
+         main: main,
+         ctrref: ref
+       }) do
     :ok = Store.delete_entry(main, key)
   end
 
   # Rolling back an inserted entry
-  defp rollback_entry(
-         db_entry(key: key, value: {ref, :inserted_value}),
-         %@m{main: main, ctrref: ref} = acc
-       ) do
+  defp rollback_entry(db_entry(key: key, value: {ref, :inserted_value}), %@m{
+         main: main,
+         ctrref: ref
+       }) do
     :ok = Store.delete_entry(main, key)
   end
 
-  # Rolling back a deleted or updated value, we just cleanup the record
-  defp rollback_entry(entry, %@m{main: main, ctrref: ref} = acc) do
-    entry = db_entry(entry, trref: nil, trval: nil, trinserted: false)
-    :ok = Store.put_entry(main, entry)
+  # Rolling back any other entry a deleted or updated value, we just cleanup the record
+  defp rollback_entry(db_entry(trref: ref) = entry, %@m{main: main, ctrref: ref}) do
+    clean_entry = db_entry(entry, trref: nil, trval: nil, trinserted: false)
+    :ok = Store.put_entry(main, clean_entry)
   end
 end

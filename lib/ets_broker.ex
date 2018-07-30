@@ -12,7 +12,7 @@ defmodule EtsBroker do
   require Logger
 
   def child_spec(arg) do
-    default = %{
+    %{
       id: __MODULE__,
       start: {__MODULE__, :start_link, [arg]}
     }
@@ -49,12 +49,14 @@ defmodule EtsBroker do
     GenLoop.stop(sl, reason, timeout)
   end
 
+  def borrow(sl, timeout \\ 5000, fun)
+
   def borrow(sl, timeout, fun) when is_function(fun, 1) do
     discard_meta = fn tab, _meta -> fun.(tab) end
     borrow(sl, timeout, discard_meta)
   end
 
-  def borrow(sl, timeout \\ 5000, fun) do
+  def borrow(sl, timeout, fun) do
     proc_key = {__MODULE__, {:locked, sl}}
 
     if Process.get(proc_key) === true do
@@ -73,7 +75,7 @@ defmodule EtsBroker do
   end
 
   defp require_table(sl, timeout) do
-    ref = make_ref
+    ref = make_ref()
     :ok = GenLoop.call(sl, {:acquire, self(), ref}, timeout)
     {:ok, ref}
   end
@@ -96,11 +98,11 @@ defmodule EtsBroker do
     seed_fun.(tab)
   end
 
-  defp seed_table(tab, seed_fun) when is_function(seed_fun) do
+  defp seed_table(_tab, seed_fun) when is_function(seed_fun) do
     raise EtsBroker.Error, "EtsBroker initial value cannot be a seed_fun with a non-1 arity"
   end
 
-  defp seed_table(tab, _other) do
+  defp seed_table(_tab, _other) do
     # no seed
     :ok
   end
@@ -131,7 +133,7 @@ defmodule EtsBroker do
 
   def init_receive_table(state) do
     receive do
-      {:"ETS-TRANSFER", tab, from, :INITIAL} ->
+      {:"ETS-TRANSFER", tab, _, :INITIAL} ->
         state
         |> Map.put(:tab, tab)
         |> loop_await_client()
@@ -151,19 +153,19 @@ defmodule EtsBroker do
         |> set_lock(client_pid)
         |> loop_await_release()
 
-      info ->
+      _info ->
         # Logger.debug("Unhandled info : #{inspect(info)}")
         loop_await_client(state)
     end
   end
 
-  def loop_await_release(%S{client: {client_pid, mref}, tab: tab} = state)
+  def loop_await_release(%S{client: {client_pid, _}, tab: tab} = state)
       when is_pid(client_pid) do
     receive state do
-      {:"ETS-TRANSFER", ^tab, from, :"HEIR-TRANSFER"} ->
-        handle_client_terminated(state, from)
+      {:"ETS-TRANSFER", ^tab, ^client_pid, :"HEIR-TRANSFER"} ->
+        handle_client_terminated(state, client_pid)
 
-      {:"ETS-TRANSFER", ^tab, _from, :RELEASE} ->
+      {:"ETS-TRANSFER", ^tab, ^client_pid, :RELEASE} ->
         state
         |> cleanup_lock()
         |> loop_await_client()
@@ -195,7 +197,7 @@ defmodule EtsBroker do
     end
   end
 
-  defp handle_client_terminated(%S{client: {client_pid, mref}} = state, other_ets_owner) do
+  defp handle_client_terminated(_state, _other_ets_owner) do
     # @todo provide a give_away function that allow this module to set a new client_pid and monitor
     raise EtsBroker.Error, "Expected ets owner does not match the registered client"
   end

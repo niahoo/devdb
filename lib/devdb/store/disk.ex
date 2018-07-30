@@ -40,11 +40,9 @@ defmodule DevDB.Store.Disk do
   end
 
   def basename_to_key(@b64_prefix <> basename) do
-    binary =
-      Base.url_decode64!(basename, padding: false)
-      |> IO.inspect()
-
-    term = :erlang.binary_to_term(binary)
+    basename
+    |> Base.url_decode64!(padding: false)
+    |> :erlang.binary_to_term()
   end
 
   def basename_to_key(basename) do
@@ -100,7 +98,6 @@ defimpl DevDB.Store.Protocol, for: DevDB.Store.Disk do
   import DevDB.Entry
   alias DevDB.Store.Disk
   import Disk
-  alias DevDB.Codec
 
   # We only use key and value, so we match-out any transactional reference
   def put_entry(state, db_entry(key: key, value: value, trref: nil)) do
@@ -120,4 +117,7 @@ defimpl DevDB.Store.Protocol, for: DevDB.Store.Disk do
       fun.(entry, acc)
     end)
   end
+
+  def reduce_tr_entries(_state, _ref, _acc, _fun), do: raise("not implemented")
+  def fetch_entry(_state, _key), do: raise("not implemented")
 end

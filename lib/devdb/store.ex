@@ -8,7 +8,7 @@ end
 
 defmodule DevDB.Store do
   def each_entries(state, fun) do
-    reduce_entries(state, nil, fn entry, acc ->
+    reduce_entries(state, nil, fn entry, _acc ->
       fun.(entry)
     end)
   end

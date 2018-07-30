@@ -135,4 +135,17 @@ defmodule DevDBDiskTest do
       assert v === DevDB.get(pid, k)
     end)
   end
+
+  test "Very long seeding" do
+    {:ok, pid} =
+      DevDB.start_link(
+        nil,
+        seed: fn _tab ->
+          Process.sleep(5500)
+          :ok
+        end
+      )
+
+    assert is_pid(pid)
+  end
 end

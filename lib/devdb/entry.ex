@@ -23,6 +23,12 @@ defmodule DevDB.Entry do
   def updated_value(value, ref), do: {ref, :updated_value, value}
 
   def to_kv(db_entry(key: key, value: value)), do: {key, value}
-  def to_kv(db_entry(key: key, trref: ref, trval: value), ref), do: {key, TODO.val_from_tr(value)}
+
+  def to_kv(db_entry(key: _key, trref: ref, trval: value), ref),
+    do:
+      raise(
+        "Unimplemented value from transactional value : #{inspect(value)}. Should be nil if deleted."
+      )
+
   def to_kv(db_entry(key: key, value: value), _ref), do: {key, value}
 end

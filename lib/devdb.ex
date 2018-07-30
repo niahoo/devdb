@@ -20,7 +20,7 @@ defmodule DevDB do
     # for practical reasons (test and dev), we know that the repository type
     # here is a DevDB.Store.Ets. So we use it to create the table.
     create_table = fn ->
-      tab = DevDB.Store.Ets.create_table(name, [:private])
+      DevDB.Store.Ets.create_table(name, [:private])
     end
 
     seed =
@@ -189,14 +189,9 @@ defmodule DevDB do
       repo = Repo.set_main_store(repo, Store.Ets.new(tab))
 
       case fun.(repo) do
-        {:reply, reply} ->
-          reply
-
-        {:error, _} = err ->
-          err
-
-        :error = err ->
-          :error
+        {:reply, reply} -> reply
+        {:error, _} = err -> err
+        :error -> :error
       end
     end)
   end
