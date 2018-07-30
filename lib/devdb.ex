@@ -1,6 +1,7 @@
 defmodule DevDB do
   require Logger
   alias DevDB.Repository, as: Repo
+  alias DevDB.Store
 
   def start_link(name, opts \\ []) do
     start(:start_link, name, opts)
@@ -13,21 +14,35 @@ defmodule DevDB do
   defp start(start_fun, name, opts) do
     # We give the repository to the ets broker so it can be sent to every
     # client.
+    {repo_opts, _} = Keyword.split(opts, [:backend, :seed])
 
     # We are ETS aware : despite the repository is implemented using a protocol
     # for practical reasons (test and dev), we know that the repository type
-    # here is a DevDB.Repository.Ets. So we use it to create the table.
-    create_table = fn -> DevDB.Repository.Ets.create_table(name, [:private]) end
+    # here is a DevDB.Store.Ets. So we use it to create the table.
+    create_table = fn ->
+      tab = DevDB.Store.Ets.create_table(name, [:private])
+    end
 
-    # As metadata we give the module we want to use with the ets table, its
-    # specific options, and the options for the repository like backend,
-    {repo_opts, opts} = Keyword.split(opts, [:backend])
+    seed =
+      case {repo_opts[:seed], repo_opts[:backend]} do
+        {:backend, nil} ->
+          raise "Cannot seed from bakend without a backend"
+
+        {:backend, backend} ->
+          &seed_ets_from_store(&1, backend)
+
+        {user_defined_seed, _} ->
+          # May be nil
+          user_defined_seed
+      end
+
     repository = DevDB.Repository.new(repo_opts)
 
     broker_opts = [
       meta: repository,
       create_table: create_table,
-      name: name
+      name: name,
+      seed: seed
     ]
 
     apply(EtsBroker, start_fun, [broker_opts])
@@ -67,6 +82,16 @@ defmodule DevDB do
 
   def fetch({:tr_repo, repo}, key) do
     Repo.tr_fetch(repo, key)
+  end
+
+  def get(db, key, default \\ nil) do
+    case fetch(db, key) do
+      {:ok, value} ->
+        value
+
+      :error ->
+        default
+    end
   end
 
   def select(db, filter)
@@ -137,7 +162,6 @@ defmodule DevDB do
     end)
   end
 
-  @todo "here give the backend to apply updates too. use replicates or pubsub."
   defp commit_transaction(tr_repo, reply) do
     case Repo.commit_transaction(tr_repo) do
       :ok ->
@@ -162,7 +186,7 @@ defmodule DevDB do
 
   defp call_with_repo(db, fun) do
     EtsBroker.borrow(db, fn tab, repo ->
-      repo = Repo.set_main_store(repo, Repo.Ets.new(tab))
+      repo = Repo.set_main_store(repo, Store.Ets.new(tab))
 
       case fun.(repo) do
         {:reply, reply} ->
@@ -192,5 +216,13 @@ defmodule DevDB do
     after
       Process.delete(@tr_check)
     end
+  end
+
+  defp seed_ets_from_store(tab, from_store) do
+    to_store = DevDB.Store.Ets.new(tab)
+
+    DevDB.Store.reduce_entries(from_store, to_store, fn entry, to_store ->
+      :ok = DevDB.Store.put_entry(to_store, entry)
+    end)
   end
 end

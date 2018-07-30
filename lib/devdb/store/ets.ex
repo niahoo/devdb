@@ -1,9 +1,9 @@
-defmodule DevDB.Repository.Ets do
-  import DevDB.Repository.Entry
+defmodule DevDB.Store.Ets do
+  import DevDB.Entry
   alias :ets, as: Ets
 
   def create_table(name, opts) do
-    Ets.new(name, [:set, {:keypos, db_entry(:key) + 1} | opts])
+    {:ok, Ets.new(name, [:set, {:keypos, db_entry(:key) + 1} | opts])}
   end
 
   defstruct tab: nil
@@ -19,8 +19,8 @@ end
 
 ## --
 
-defimpl DevDB.Repository.Store, for: DevDB.Repository.Ets do
-  import DevDB.Repository.Entry
+defimpl DevDB.Store, for: DevDB.Store.Ets do
+  import DevDB.Entry
   alias :ets, as: Ets
 
   @match_tr_chunk_size 100

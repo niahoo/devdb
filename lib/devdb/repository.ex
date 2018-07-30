@@ -1,14 +1,6 @@
-defprotocol DevDB.Repository.Store do
-  def put_entry(state, entry)
-  def delete_entry(state, key)
-  def fetch_entry(state, key)
-  def reduce_entries(state, acc, fun)
-  def reduce_tr_entries(state, ref, acc, fun)
-end
-
 defmodule DevDB.Repository do
   require Logger
-  alias DevDB.Repository.Store
+  alias DevDB.Store
   @todo "Add backend configuration, tab2file autodump, etc..."
   defstruct main: nil,
             # current transaction reference
@@ -16,7 +8,7 @@ defmodule DevDB.Repository do
             # backend repository
             backend: nil
 
-  alias DevDB.Repository.Entry
+  alias DevDB.Entry
   import Entry
 
   @m __MODULE__

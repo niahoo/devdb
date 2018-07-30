@@ -4,24 +4,30 @@ defmodule DevDBDiskTest do
 
   @dberl __MODULE__
   @dbsjon __MODULE__.JSON
+  @dbrecov __MODULE__.Shut
 
   @dir_default File.cwd!()
                |> Path.join("test/stores/db1-term2bin")
-               |> DevDB.Repository.Disk.reset_dir!()
+               |> DevDB.Store.Disk.reset_dir!()
 
   @dir_json File.cwd!()
             |> Path.join("test/stores/db2-json")
-            |> DevDB.Repository.Disk.reset_dir!()
+            |> DevDB.Store.Disk.reset_dir!()
+
+  @dir_recovery File.cwd!()
+                |> Path.join("test/stores/db3-recovery")
+                |> DevDB.Store.Disk.reset_dir!()
 
   @dbs_conf %{
-    @dberl => [backend: DevDB.Repository.Disk.new(dir: @dir_default)],
+    @dberl => [backend: DevDB.Store.Disk.new(dir: @dir_default)],
     @dbsjon => [
       backend:
-        DevDB.Repository.Disk.new(
+        DevDB.Store.Disk.new(
           dir: @dir_json,
           codec: [ext: ".json", module: Poison, encode: [pretty: true]]
         )
-    ]
+    ],
+    @dbrecov => [backend: DevDB.Store.Disk.new(dir: @dir_recovery), seed: :backend]
   }
 
   defp start_db!(db) do
@@ -65,12 +71,12 @@ defmodule DevDBDiskTest do
     pid = start_db!(store_id)
     assert is_pid(pid)
 
-    %DevDB.Repository.Disk{dir: dir, codec: %{mod: mod, ext: ext}} = @dbs_conf[store_id][:backend]
+    %DevDB.Store.Disk{dir: dir, codec: %{mod: mod, ext: ext}} = @dbs_conf[store_id][:backend]
 
     cases
     |> Enum.map(fn {key, val} ->
       DevDB.put(pid, key, val)
-      filename = DevDB.Repository.Disk.key_to_filename(key, ext)
+      filename = DevDB.Store.Disk.key_to_filename(key, ext)
 
       term =
         dir
@@ -80,5 +86,22 @@ defmodule DevDBDiskTest do
 
       assert term === val
     end)
+  end
+
+  test "Recover values after shutdown" do
+    pid = start_db!(@dbrecov)
+    # Init data
+    DevDB.put(pid, "a", 1)
+    DevDB.put(pid, "b", 2)
+    assert 1 === DevDB.get(pid, "a")
+    assert 2 === DevDB.get(pid, "b")
+    # Stop the database
+    assert :ok = DevDB.stop(pid)
+    refute Process.alive?(pid)
+    # We will start again, and the database must be populated with what was
+    # stored on disk
+    pid = start_db!(@dbrecov)
+    assert 1 === DevDB.get(pid, "a")
+    assert 2 === DevDB.get(pid, "b")
   end
 end

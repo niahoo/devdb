@@ -1,4 +1,4 @@
-defmodule DevDB.Repository.Entry do
+defmodule DevDB.Entry do
   require Record
   use TODO
   @todo "Remove ref entry as it is used in values ? But it's useful to match everything at once"
@@ -21,4 +21,8 @@ defmodule DevDB.Repository.Entry do
   # Indicates that a new value has been inserted for this record in this
   # transaction
   def updated_value(value, ref), do: {ref, :updated_value, value}
+
+  def to_kv(db_entry(key: key, value: value)), do: {key, value}
+  def to_kv(db_entry(key: key, trref: ref, trval: value), ref), do: {key, TODO.val_from_tr(value)}
+  def to_kv(db_entry(key: key, value: value), _ref), do: {key, value}
 end

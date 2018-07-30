@@ -32,10 +32,10 @@ defmodule EtsBroker do
     arg =
       Keyword.take(opts, [:meta, :create_table, :seed])
       |> Keyword.put_new(:meta, nil)
-      |> Keyword.put_new(:create_table, fn -> :ets.new(__MODULE__, [:set, :private]) end)
+      |> Keyword.put_new(:create_table, fn -> {:ok, :ets.new(__MODULE__, [:set, :private])} end)
       |> Keyword.put_new(:seed, fn _tab -> :ok end)
 
-    tab = arg[:create_table].()
+    {:ok, tab} = arg[:create_table].()
     seed_table(tab, arg[:seed])
 
     gen_opts = Keyword.take(opts, [:name])
