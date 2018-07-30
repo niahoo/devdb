@@ -8,9 +8,16 @@ defmodule DevDBTest do
     @db1 => []
   }
 
-  defp start_db!(db) do
+  defp start_db!(db, name \\ nil) do
     conf = Map.get(@dbtores_conf, db)
-    {:ok, pid} = DevDB.start_link(db, conf)
+
+    {:ok, pid} =
+      if name do
+        DevDB.start_link([{:name, name} | conf])
+      else
+        DevDB.start_link(conf)
+      end
+
     true = is_pid(pid)
     pid
   end
@@ -19,6 +26,14 @@ defmodule DevDBTest do
     pid = start_db!(@db1)
     assert is_pid(pid)
     DevDB.stop(pid, :normal, 1000)
+  end
+
+  test "start/stop the database with a process name" do
+    pid = start_db!(@db1, :named)
+    assert Process.alive?(Process.whereis(:named))
+    assert :named in Process.registered()
+    assert :ok === DevDB.stop(:named, :normal, 1000)
+    refute :named in Process.registered()
   end
 
   test "put/fetch a value" do

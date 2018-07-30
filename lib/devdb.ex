@@ -3,24 +3,24 @@ defmodule DevDB do
   alias DevDB.Repository, as: Repo
   alias DevDB.Store
 
-  def start_link(name, opts \\ []) do
-    start(:start_link, name, opts)
+  def start_link(opts \\ []) do
+    start(:start_link, opts)
   end
 
-  def start(name, opts \\ []) do
-    start(:start, name, opts)
+  def start(opts \\ []) do
+    start(:start, opts)
   end
 
-  defp start(start_fun, name, opts) do
+  defp start(start_fun, opts) do
     # We give the repository to the ets broker so it can be sent to every
     # client.
-    {repo_opts, _} = Keyword.split(opts, [:backend, :seed])
+    {repo_opts, opts} = Keyword.split(opts, [:backend, :seed])
 
     # We are ETS aware : despite the repository is implemented using a protocol
     # for practical reasons (test and dev), we know that the repository type
     # here is a DevDB.Store.Ets. So we use it to create the table.
     create_table = fn ->
-      DevDB.Store.Ets.create_table(name, [:private])
+      DevDB.Store.Ets.create_table(opts[:name] || __MODULE__, [:private])
     end
 
     seed =
@@ -41,7 +41,7 @@ defmodule DevDB do
     broker_opts = [
       meta: repository,
       create_table: create_table,
-      name: name,
+      name: opts[:name],
       seed: seed
     ]
 

@@ -48,7 +48,7 @@ defmodule DevDBDiskTest do
 
   defp start_db!(db) do
     conf = Map.get(@dbs_conf, db)
-    {:ok, pid} = DevDB.start_link(db, conf)
+    {:ok, pid} = DevDB.start_link(conf)
     true = is_pid(pid)
     pid
   end
@@ -134,5 +134,9 @@ defmodule DevDBDiskTest do
     Enum.each(pairs, fn {k, v} ->
       assert v === DevDB.get(pid, k)
     end)
+  end
+
+  test "Recover after commit" do
+    # pid = start_db!(@db)
   end
 end
