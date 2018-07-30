@@ -1,7 +1,7 @@
 defmodule DevDB.Store.Disk do
   use TODO
   defstruct dir: nil, codec: nil, file_ext: nil
-  alias Kvern.Codec
+  alias DevDB.Codec
 
   @b64_prefix "b64."
   @re_valid_filename ~r/^[\P{C}]+$/
@@ -100,7 +100,7 @@ defimpl DevDB.Store.Protocol, for: DevDB.Store.Disk do
   import DevDB.Entry
   alias DevDB.Store.Disk
   import Disk
-  alias Kvern.Codec
+  alias DevDB.Codec
 
   # We only use key and value, so we match-out any transactional reference
   def put_entry(state, db_entry(key: key, value: value, trref: nil)) do

@@ -24,7 +24,7 @@ defmodule DevDB.Repository do
   def put(%@m{main: main, backend: backend}, key, value) do
     entry = db_entry(key: key, value: value)
     :ok = Store.put_entry(main, entry)
-    :ok = if(backend, do: Store.put_entry(backend, entry), else: :aaa)
+    :ok = if(backend, do: Store.put_entry(backend, entry), else: :ok)
   end
 
   def delete(%@m{main: main}, key) do

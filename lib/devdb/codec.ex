@@ -1,4 +1,4 @@
-defmodule Kvern.Codec do
+defmodule DevDB.Codec do
   @callback encode!(keyval :: Map.t(), opts :: [any()]) :: binary()
   @callback decode!(file_content :: binary(), opts :: [any()]) :: Map.t()
 
