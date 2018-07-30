@@ -221,7 +221,7 @@ defmodule DevDB do
   defp seed_ets_from_store(tab, from_store) do
     to_store = DevDB.Store.Ets.new(tab)
 
-    DevDB.Store.reduce_entries(from_store, to_store, fn entry, to_store ->
+    DevDB.Store.each_entries(from_store, fn entry ->
       :ok = DevDB.Store.put_entry(to_store, entry)
     end)
   end

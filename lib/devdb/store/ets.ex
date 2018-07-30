@@ -19,7 +19,7 @@ end
 
 ## --
 
-defimpl DevDB.Store, for: DevDB.Store.Ets do
+defimpl DevDB.Store.Protocol, for: DevDB.Store.Ets do
   import DevDB.Entry
   alias :ets, as: Ets
 

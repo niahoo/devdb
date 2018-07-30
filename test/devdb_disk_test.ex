@@ -5,6 +5,7 @@ defmodule DevDBDiskTest do
   @dberl __MODULE__
   @dbsjon __MODULE__.JSON
   @dbrecov __MODULE__.Shut
+  @dbrecovjson __MODULE__.ShutJson
 
   @dir_default File.cwd!()
                |> Path.join("test/stores/db1-term2bin")
@@ -18,6 +19,10 @@ defmodule DevDBDiskTest do
                 |> Path.join("test/stores/db3-recovery")
                 |> DevDB.Store.Disk.reset_dir!()
 
+  @dir_recovery_json File.cwd!()
+                     |> Path.join("test/stores/db3-recovery-json")
+                     |> DevDB.Store.Disk.reset_dir!()
+
   @dbs_conf %{
     @dberl => [backend: DevDB.Store.Disk.new(dir: @dir_default)],
     @dbsjon => [
@@ -27,7 +32,18 @@ defmodule DevDBDiskTest do
           codec: [ext: ".json", module: Poison, encode: [pretty: true]]
         )
     ],
-    @dbrecov => [backend: DevDB.Store.Disk.new(dir: @dir_recovery), seed: :backend]
+    @dbrecov => [
+      backend: DevDB.Store.Disk.new(dir: @dir_recovery),
+      seed: :backend
+    ],
+    @dbrecovjson => [
+      backend:
+        DevDB.Store.Disk.new(
+          dir: @dir_recovery_json,
+          codec: [ext: ".json", module: Poison, encode: [pretty: true]]
+        ),
+      seed: :backend
+    ]
   }
 
   defp start_db!(db) do
@@ -89,19 +105,34 @@ defmodule DevDBDiskTest do
   end
 
   test "Recover values after shutdown" do
-    pid = start_db!(@dbrecov)
+    test_recover(@dbrecov)
+    test_recover(@dbrecovjson)
+  end
+
+  def test_recover(store) do
+    pid = start_db!(store)
     # Init data
-    DevDB.put(pid, "a", 1)
-    DevDB.put(pid, "b", 2)
-    assert 1 === DevDB.get(pid, "a")
-    assert 2 === DevDB.get(pid, "b")
+    pairs = [
+      {"a", 1},
+      {"b", 2},
+      {:atom, "test"},
+      {{"iama", :tuple}, "val"},
+      {%{map: true}, [true, false, nil]}
+    ]
+
+    Enum.each(pairs, fn {k, v} ->
+      DevDB.put(pid, k, v)
+    end)
+
     # Stop the database
     assert :ok = DevDB.stop(pid)
     refute Process.alive?(pid)
     # We will start again, and the database must be populated with what was
     # stored on disk
-    pid = start_db!(@dbrecov)
-    assert 1 === DevDB.get(pid, "a")
-    assert 2 === DevDB.get(pid, "b")
+    pid = start_db!(store)
+
+    Enum.each(pairs, fn {k, v} ->
+      assert v === DevDB.get(pid, k)
+    end)
   end
 end
