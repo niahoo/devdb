@@ -116,23 +116,17 @@ defmodule DevDB do
         # When the transaction is over, the transactional repo is just ditched
         # and the base_repo remains unchanged.
 
-        IO.puts("BEGIN")
-
         case fun.({:tr_repo, tr_repo}) do
           {:ok, _} = reply ->
-            IO.puts("COMMIT")
             commit_transaction(tr_repo, reply)
 
           ok_atom when ok_atom in [:ok, :commit] ->
-            IO.puts("COMMIT")
             commit_transaction(tr_repo, :ok)
 
           {:error, _} = err ->
-            IO.puts("ROLLBACK")
             rollback_transaction(tr_repo, err)
 
           error_atom when error_atom in [:error, :rollback] ->
-            IO.puts("ROLLBACK")
             rollback_transaction(tr_repo, :error)
         end
       end)

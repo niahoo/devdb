@@ -187,7 +187,7 @@ defmodule DevDB.Repository do
 
   def commit_transaction(%@m{ctrref: ref} = this) when is_reference(ref) do
     foreach_current_transient_object(this, fn entry, thisp ->
-      IO.puts("commit entry #{inspect(db_entry(entry, :key))}")
+      # IO.puts("commit entry #{inspect(db_entry(entry, :key))}")
       commit_entry(entry, thisp)
     end)
 
@@ -196,7 +196,7 @@ defmodule DevDB.Repository do
 
   def rollback_transaction(%@m{ctrref: ref} = this) when is_reference(ref) do
     foreach_current_transient_object(this, fn entry, thisp ->
-      IO.puts("rollback entry #{inspect(db_entry(entry, :key))}")
+      # IO.puts("rollback entry #{inspect(db_entry(entry, :key))}")
       rollback_entry(entry, thisp)
     end)
 
