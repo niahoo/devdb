@@ -1,7 +1,5 @@
 defmodule DevDB.Entry do
   require Record
-  use TODO
-  @todo "Remove ref entry as it is used in values ? But it's useful to match everything at once"
   Record.defrecord(:db_entry, key: nil, value: nil, trref: nil, trval: nil, trinserted: false)
 
   def match_spec_base() do

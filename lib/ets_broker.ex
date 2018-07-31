@@ -198,7 +198,6 @@ defmodule EtsBroker do
   end
 
   defp handle_client_terminated(_state, _other_ets_owner) do
-    # @todo provide a give_away function that allow this module to set a new client_pid and monitor
     raise EtsBroker.Error, "Expected ets owner does not match the registered client"
   end
 

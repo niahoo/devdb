@@ -4,24 +4,30 @@ defmodule DevDBDiskTest do
 
   @dberl __MODULE__
   @dbsjon __MODULE__.JSON
-  @dbrecov __MODULE__.Shut
-  @dbrecovjson __MODULE__.ShutJson
+  @dbbento __MODULE__.Bencode
+  @dbmsgpack __MODULE__.MsgPack
+  @dbseed __MODULE__.Shut
+  @dbseedjson __MODULE__.ShutJson
 
   @dir_default File.cwd!()
-               |> Path.join("test/stores/db1-term2bin")
+               |> Path.join("test/stores/db-term2bin")
                |> DevDB.Store.Disk.reset_dir!()
 
   @dir_json File.cwd!()
-            |> Path.join("test/stores/db2-json")
+            |> Path.join("test/stores/db-json")
             |> DevDB.Store.Disk.reset_dir!()
 
-  @dir_recovery File.cwd!()
-                |> Path.join("test/stores/db3-recovery")
-                |> DevDB.Store.Disk.reset_dir!()
+  @dir_bencode File.cwd!()
+               |> Path.join("test/stores/db-bencode")
+               |> DevDB.Store.Disk.reset_dir!()
 
-  @dir_recovery_json File.cwd!()
-                     |> Path.join("test/stores/db3-recovery-json")
-                     |> DevDB.Store.Disk.reset_dir!()
+  @dir_seed File.cwd!()
+            |> Path.join("test/stores/db-seed")
+            |> DevDB.Store.Disk.reset_dir!()
+
+  @dir_seed_json File.cwd!()
+                 |> Path.join("test/stores/db-seed-json")
+                 |> DevDB.Store.Disk.reset_dir!()
 
   @dbs_conf %{
     @dberl => [backend: DevDB.Store.Disk.new(dir: @dir_default)],
@@ -32,14 +38,21 @@ defmodule DevDBDiskTest do
           codec: [ext: ".json", module: Poison, encode: [pretty: true]]
         )
     ],
-    @dbrecov => [
-      backend: DevDB.Store.Disk.new(dir: @dir_recovery),
-      seed: :backend
-    ],
-    @dbrecovjson => [
+    @dbbento => [
       backend:
         DevDB.Store.Disk.new(
-          dir: @dir_recovery_json,
+          dir: @dir_bencode,
+          codec: [ext: ".btc", module: Bento, encode: [pretty: true]]
+        )
+    ],
+    @dbseed => [
+      backend: DevDB.Store.Disk.new(dir: @dir_seed),
+      seed: :backend
+    ],
+    @dbseedjson => [
+      backend:
+        DevDB.Store.Disk.new(
+          dir: @dir_seed_json,
           codec: [ext: ".json", module: Poison, encode: [pretty: true]]
         ),
       seed: :backend
@@ -81,6 +94,15 @@ defmodule DevDBDiskTest do
       {"some-complicated", ["some", "values", %{"with" => "stuff"}]}
       # Json composed terms can only have string keys, so that's all
     ])
+
+    run_kv_inserts_with_store(@dbbento, [
+      # Bencode does not support float or atoms
+      {"some-integer", 1},
+      {"some-list", [1, 2, 3, 4]},
+      {"some-mixed-or-nested-list", [1, "2", 'three']},
+      {"some-complicated", ["some", "values", %{"with" => "stuff"}]},
+      {"some-deep", [[[[[[[[[[[[[[[[[[[[[[[[[[<<0, 0, 0, 1>>]]]]]]]]]]]]]]]]]]]]]]]]]]}
+    ])
   end
 
   defp run_kv_inserts_with_store(store_id, cases) do
@@ -105,8 +127,8 @@ defmodule DevDBDiskTest do
   end
 
   test "Recover values after shutdown" do
-    test_recover(@dbrecov)
-    test_recover(@dbrecovjson)
+    test_recover(@dbseed)
+    test_recover(@dbseedjson)
   end
 
   def test_recover(store) do
@@ -117,12 +139,15 @@ defmodule DevDBDiskTest do
       {"b", 2},
       {:atom, "test"},
       {{"iama", :tuple}, "val"},
-      {%{map: true}, [true, false, nil]}
+      {%{map: true}, [true, false, nil]},
+      {:will_delete, "I disappear"}
     ]
 
     Enum.each(pairs, fn {k, v} ->
       DevDB.put(pid, k, v)
     end)
+
+    DevDB.delete(pid, :will_delete)
 
     # Stop the database
     assert :ok = DevDB.stop(pid)
@@ -131,12 +156,30 @@ defmodule DevDBDiskTest do
     # stored on disk
     pid = start_db!(store)
 
-    Enum.each(pairs, fn {k, v} ->
-      assert v === DevDB.get(pid, k)
+    Enum.each(pairs, fn
+      {:will_delete, _} ->
+        # ignore
+        :ok
+
+      {k, v} ->
+        assert v === DevDB.get(pid, k)
     end)
+
+    assert :__default_val === DevDB.get(pid, :will_delete, :__default_val)
   end
 
   test "Recover after commit" do
-    # pid = start_db!(@db)
+    store = @dbseed
+    pid = start_db!(store)
+    k = "k_tr_commit"
+    v = 1
+
+    DevDB.transaction(pid, fn repo ->
+      DevDB.put(repo, k, v)
+    end)
+
+    :ok = DevDB.stop(pid)
+    pid = start_db!(store)
+    assert v === DevDB.get(pid, k)
   end
 end

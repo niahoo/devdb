@@ -1,5 +1,4 @@
 defmodule DevDB.Store.Disk do
-  use TODO
   defstruct dir: nil, codec: nil, file_ext: nil
   alias DevDB.Codec
 
@@ -106,7 +105,6 @@ defimpl DevDB.Store.Protocol, for: DevDB.Store.Disk do
 
   def delete_entry(state, key) do
     path = key_to_filename(key, state.file_ext, state.dir)
-
     :ok = File.rm!(path)
   end
 

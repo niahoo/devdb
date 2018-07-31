@@ -27,8 +27,9 @@ defmodule DevDB.Repository do
     :ok = if(backend, do: Store.put_entry(backend, entry), else: :ok)
   end
 
-  def delete(%@m{main: main}, key) do
+  def delete(%@m{main: main, backend: backend}, key) do
     :ok = Store.delete_entry(main, key)
+    :ok = if(backend, do: Store.delete_entry(backend, key), else: :ok)
   end
 
   def fetch(%@m{main: main}, key) do
@@ -207,10 +208,12 @@ defmodule DevDB.Repository do
   # field to the :value field.
   defp commit_entry(db_entry(trval: {ref, :updated_value, value}) = entry, %@m{
          main: main,
+         backend: backend,
          ctrref: ref
        }) do
     entry = db_entry(entry, value: value, trref: nil, trval: nil, trinserted: false)
     :ok = Store.put_entry(main, entry)
+    :ok = if(backend, do: Store.put_entry(backend, entry), else: :ok)
   end
 
   # Commit a deletion : we delete the record from the ETS table.

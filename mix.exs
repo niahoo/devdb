@@ -44,13 +44,17 @@ defmodule Kvern.Mixfile do
       {:decompilerl, github: "niahoo/decompilerl", only: :dev},
       {:ex_doc, "~> 0.14", only: :dev, runtime: false},
       {:todo, "~> 1.3", runtime: false},
+      {:credo, "~> 0.9.1", only: [:dev, :test], runtime: false},
+      # data
+      {:poison, "~> 3.1", only: [:dev, :test]},
+      {:bento,
+       github: "folz/bento",
+       commit: "8e8acacbdc49700ecbb3e01d361968eca0dc0896",
+       only: [:dev, :test]},
 
       # runtime
-      # {:xdn, path: "../xdn"},
-      # {:credo, "~> 0.9.1", only: [:dev, :test], runtime: false},
       {:gen_loop, "~> 0.1.0"},
-      {:plain_fsm, github: "uwiger/plain_fsm", commit: "ae9eca8a8df8f61a32185b06882a55d60e62e904"},
-      {:poison, "~> 3.1", only: [:dev, :test]}
+      {:plain_fsm, github: "uwiger/plain_fsm", commit: "ae9eca8a8df8f61a32185b06882a55d60e62e904"}
     ]
   end
 

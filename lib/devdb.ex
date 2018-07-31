@@ -128,6 +128,19 @@ defmodule DevDB do
 
           error_atom when error_atom in [:error, :rollback] ->
             rollback_transaction(tr_repo, :error)
+
+          other ->
+            raise DevDB.Error, """
+            Transaction result must be one of :
+              {:ok, _}
+              :ok
+              :commit
+              {:error, _}
+              :error
+              :rollback
+            Result was :
+              #{inspect(other)}
+            """
         end
       end)
     end)
