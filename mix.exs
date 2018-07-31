@@ -1,7 +1,7 @@
-defmodule Kvern.Mixfile do
+defmodule DevDB.Mixfile do
   use Mix.Project
 
-  @version "0.3.0"
+  @version "1.0.0"
 
   def project do
     [
@@ -15,7 +15,7 @@ defmodule Kvern.Mixfile do
       build_embedded: Mix.env() == :prod,
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      name: "DevDb",
+      name: "DevDB",
       package: package(),
       elixirc_options: elixirc_options(Mix.env())
     ]
@@ -62,7 +62,7 @@ defmodule Kvern.Mixfile do
     [
       licenses: ["MIT"],
       maintainers: ["niahoo osef <dev@ooha.in>"],
-      links: %{"Github" => "https://github.com/niahoo/kvern"}
+      links: %{"Github" => "https://github.com/niahoo/devdb"}
     ]
   end
 
