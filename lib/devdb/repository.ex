@@ -79,9 +79,11 @@ defmodule DevDB.Repository do
       {:ok, filter_entries(main, pre_filter_transform, filter)}
     rescue
       e ->
+        Logger.error("Exception in select : " <> Exception.message(e))
         {:error, Exception.message(e)}
     catch
       :throw, e ->
+        Logger.error("Throw in select : " <> inspect(e))
         {:error, e}
     end
   end
@@ -128,9 +130,11 @@ defmodule DevDB.Repository do
       {:ok, filter_entries(main, pre_filter_transform, filter)}
     rescue
       e ->
+        Logger.error("Exception in select : " <> Exception.message(e))
         {:error, Exception.message(e)}
     catch
       :throw, e ->
+        Logger.error("Throw in select : " <> inspect(e))
         {:error, e}
     end
   end
