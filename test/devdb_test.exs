@@ -1,15 +1,23 @@
 defmodule DevDBTest do
   use ExUnit.Case, async: true
   use TODO, print: :all
+
   @db1 __MODULE__
 
   @dbtores_conf %{
     @db1 => []
   }
 
-  defp start_db!(db) do
+  defp start_db!(db, name \\ nil) do
     conf = Map.get(@dbtores_conf, db)
-    {:ok, pid} = DevDB.start_link(db, conf)
+
+    {:ok, pid} =
+      if name do
+        DevDB.start_link([{:name, name} | conf])
+      else
+        DevDB.start_link(conf)
+      end
+
     true = is_pid(pid)
     pid
   end
@@ -18,6 +26,14 @@ defmodule DevDBTest do
     pid = start_db!(@db1)
     assert is_pid(pid)
     DevDB.stop(pid, :normal, 1000)
+  end
+
+  test "start/stop the database with a process name" do
+    pid = start_db!(@db1, :named)
+    assert Process.alive?(Process.whereis(:named))
+    assert :named in Process.registered()
+    assert :ok === DevDB.stop(:named, :normal, 1000)
+    refute :named in Process.registered()
   end
 
   test "put/fetch a value" do
@@ -225,6 +241,4 @@ defmodule DevDBTest do
 
     assert_select(pid, fn val, _key -> val > 100 end, ["key-3", "key-5", "key-6"])
   end
-
-  @todo ~S(test "put/delete/shutdown/fetch" do)
 end

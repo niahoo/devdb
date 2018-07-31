@@ -1,4 +1,4 @@
-defmodule Kvern.Codec do
+defmodule DevDB.Codec do
   @callback encode!(keyval :: Map.t(), opts :: [any()]) :: binary()
   @callback decode!(file_content :: binary(), opts :: [any()]) :: Map.t()
 
@@ -7,7 +7,10 @@ defmodule Kvern.Codec do
 
   defstruct mod: nil, enc_opts: [], dec_opts: [], ext: @default_ext
 
+  def default_ext, do: @default_ext
+
   def configure(module) when is_atom(module) do
+    # All other options with defaults
     %@m{mod: module}
   end
 

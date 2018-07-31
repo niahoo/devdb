@@ -1,34 +1,55 @@
 defmodule DevDB do
   require Logger
-  alias DevDB.Repo
-  # A database is simply a SingleLock process whose value is a repository
-  # configuration with an ETS table. The SingleLock process holds the table.
-  # Acquiring the lock is the default way of acting on the table, so this allows
-  # to serialize complex operations (like selecting, and updating an entity in
-  # an isolated way)
+  alias DevDB.Repository, as: Repo
+  alias DevDB.Store
 
-  def start_link(name, opts \\ []) do
-    start(:start_link, name, opts)
+  def start_link(opts \\ []) do
+    start(:start_link, opts)
   end
 
-  def start(name, opts \\ []) do
-    start(:start, name, opts)
+  def start(opts \\ []) do
+    start(:start, opts)
   end
 
-  defp start(start_fun, name, opts) do
-    opts = Keyword.put(opts, :name, name)
+  defp start(start_fun, opts) do
+    # We give the repository to the ets broker so it can be sent to every
+    # client.
+    {repo_opts, opts} = Keyword.split(opts, [:backend, :seed])
 
-    create = fn ->
-      make_repo(opts)
+    # We are ETS aware : despite the repository is implemented using a protocol
+    # for practical reasons (test and dev), we know that the repository type
+    # here is a DevDB.Store.Ets. So we use it to create the table.
+    create_table = fn ->
+      DevDB.Store.Ets.create_table(opts[:name] || __MODULE__, [:private])
     end
 
-    opts = [{:value, create} | opts]
+    seed =
+      case {repo_opts[:seed], repo_opts[:backend]} do
+        {:backend, nil} ->
+          raise "Cannot seed from bakend without a backend"
 
-    apply(SingleLock, start_fun, [opts])
+        {:backend, backend} ->
+          &seed_ets_from_store(&1, backend)
+
+        {user_defined_seed, _} ->
+          # May be nil
+          user_defined_seed
+      end
+
+    repository = DevDB.Repository.new(repo_opts)
+
+    broker_opts = [
+      meta: repository,
+      create_table: create_table,
+      name: opts[:name],
+      seed: seed
+    ]
+
+    apply(EtsBroker, start_fun, [broker_opts])
   end
 
   def stop(db, reason \\ :normal, timeout \\ :infinity) do
-    SingleLock.stop(db, reason, timeout)
+    EtsBroker.stop(db, reason, timeout)
   end
 
   ## -- --
@@ -40,7 +61,7 @@ defmodule DevDB do
   end
 
   def put({:tr_repo, repo}, key, value) do
-    Repo.put(repo, key, value)
+    Repo.tr_put(repo, key, value)
   end
 
   def delete(db, key) when is_pid(db) or is_atom(db) do
@@ -50,7 +71,7 @@ defmodule DevDB do
   end
 
   def delete({:tr_repo, repo}, key) do
-    Repo.delete(repo, key)
+    Repo.tr_delete(repo, key)
   end
 
   def fetch(db, key) when is_pid(db) or is_atom(db) do
@@ -60,7 +81,17 @@ defmodule DevDB do
   end
 
   def fetch({:tr_repo, repo}, key) do
-    Repo.fetch(repo, key)
+    Repo.tr_fetch(repo, key)
+  end
+
+  def get(db, key, default \\ nil) do
+    case fetch(db, key) do
+      {:ok, value} ->
+        value
+
+      :error ->
+        default
+    end
   end
 
   def select(db, filter)
@@ -71,35 +102,45 @@ defmodule DevDB do
   end
 
   def select({:tr_repo, repo}, filter) do
-    Repo.select(repo, filter)
+    Repo.tr_select(repo, filter)
   end
 
   def transaction(db, fun) when is_pid(db) or is_atom(db) do
     fail_if_in_transaction(fn ->
-      call_with_lock(db, fn base_repo ->
+      call_with_repo(db, fn base_repo ->
         {:ok, tr_repo} = Repo.begin_transaction(base_repo)
 
-        # we wrap the transactional repo in a :tr_repo tagged tuple so we can
+        # We wrap the transactional repo in a :tr_repo tagged tuple so we can
         # easily pattern match on the single API functions put/fetch/...
 
-        IO.puts("BEGIN")
+        # When the transaction is over, the transactional repo is just ditched
+        # and the base_repo remains unchanged.
 
         case fun.({:tr_repo, tr_repo}) do
           {:ok, _} = reply ->
-            IO.puts("COMMIT")
             commit_transaction(tr_repo, reply)
 
           ok_atom when ok_atom in [:ok, :commit] ->
-            IO.puts("COMMIT")
             commit_transaction(tr_repo, :ok)
 
           {:error, _} = err ->
-            IO.puts("ROLLBACK")
             rollback_transaction(tr_repo, err)
 
           error_atom when error_atom in [:error, :rollback] ->
-            IO.puts("ROLLBACK")
             rollback_transaction(tr_repo, :error)
+
+          other ->
+            raise DevDB.Error, """
+            Transaction result must be one of :
+              {:ok, _}
+              :ok
+              :commit
+              {:error, _}
+              :error
+              :rollback
+            Result was :
+              #{inspect(other)}
+            """
         end
       end)
     end)
@@ -107,16 +148,10 @@ defmodule DevDB do
 
   ## -- --
 
-  ## -- --
-
-  defp make_repo(opts) do
-    Repo.new(DevDB.Repository.Ets, opts)
-  end
-
   # Here we use only functions from this module, that we know are one-op and act
   # on the default ETS repo (non-transactional)
   defp single_update_command(db, fun) when is_pid(db) or is_atom(db) do
-    call_with_lock(db, fn repo ->
+    call_with_repo(db, fn repo ->
       case fun.(repo) do
         :ok -> {:reply, :ok}
         {:error, _} = err -> err
@@ -125,7 +160,7 @@ defmodule DevDB do
   end
 
   defp single_read_command(db, fun) when is_pid(db) or is_atom(db) do
-    call_with_lock(db, fn repo ->
+    call_with_repo(db, fn repo ->
       case fun.(repo) do
         {:ok, data} -> {:reply, {:ok, data}}
         {:error, _} = err -> err
@@ -134,11 +169,10 @@ defmodule DevDB do
     end)
   end
 
-  @todo "here give the backend to apply updates too. use replicates or pubsub."
   defp commit_transaction(tr_repo, reply) do
     case Repo.commit_transaction(tr_repo) do
-      {:ok, new_base_repo} ->
-        {:reply, reply, new_base_repo}
+      :ok ->
+        {:reply, reply}
 
       {:error, err} ->
         raise "Could not commit the transaction, err: #{inspect(err)}"
@@ -149,44 +183,24 @@ defmodule DevDB do
     Logger.error("Rollback transaction : #{inspect(reply)}")
 
     case Repo.rollback_transaction(tr_repo) do
-      {:ok, new_base_repo} ->
-        {:reply, reply, new_base_repo}
+      :ok ->
+        {:reply, reply}
 
       {:error, err} ->
         raise "Could not commit the transaction, err: #{inspect(err)}"
     end
   end
 
-  # Single command is working on a non-transact repository : get the repo,
-  # execute the fun (which could have multiple actions btw since were are
-  # isolated) and send back the repo. No concept of commit/rollback here.
+  defp call_with_repo(db, fun) do
+    EtsBroker.borrow(db, fn tab, repo ->
+      repo = Repo.set_main_store(repo, Store.Ets.new(tab))
 
-  defp call_with_lock(db, fun) do
-    {:ok, repo} = SingleLock.acquire(db)
-
-    try do
       case fun.(repo) do
-        {:reply, reply} ->
-          :ok = SingleLock.release(db)
-          reply
-
-        {:reply, reply, new_repo} ->
-          :ok = SingleLock.release(db, new_repo)
-          reply
-
-        {:error, _} = err ->
-          :ok = SingleLock.release(db)
-          err
-
-        :error = err ->
-          :ok = SingleLock.release(db)
-          :error
+        {:reply, reply} -> reply
+        {:error, _} = err -> err
+        :error -> :error
       end
-    rescue
-      e ->
-        :ok = SingleLock.release(db)
-        reraise e, System.stacktrace()
-    end
+    end)
   end
 
   @tr_check {__MODULE__, :in_transaction}
@@ -206,9 +220,11 @@ defmodule DevDB do
     end
   end
 
-  defp catch_call(fun, args) do
-    apply(fun, args)
-  rescue
-    e -> {:error, Exception.message(e)}
+  defp seed_ets_from_store(tab, from_store) do
+    to_store = DevDB.Store.Ets.new(tab)
+
+    DevDB.Store.each_entries(from_store, fn entry ->
+      :ok = DevDB.Store.put_entry(to_store, entry)
+    end)
   end
 end
