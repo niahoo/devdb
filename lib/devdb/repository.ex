@@ -223,9 +223,11 @@ defmodule DevDB.Repository do
   # Commit a deletion : we delete the record from the ETS table.
   defp commit_entry(db_entry(key: key, trval: {ref, :deleted_value}), %@m{
          main: main,
+         backend: backend,
          ctrref: ref
        }) do
     :ok = Store.delete_entry(main, key)
+    :ok = if(backend, do: Store.delete_entry(backend, key), else: :ok)
   end
 
   # Rolling back an inserted entry
